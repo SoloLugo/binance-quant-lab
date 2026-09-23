@@ -16,7 +16,6 @@ def load_config():
         return yaml.safe_load(f)
 
 def calc_rsi(series, period=14):
-    """RSI estricto sin look-ahead bias"""
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).ewm(alpha=1/period, adjust=False).mean()
     loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/period, adjust=False).mean()
@@ -24,10 +23,7 @@ def calc_rsi(series, period=14):
     return 100 - (100 / (1 + rs))
 
 def build_features(df):
-    """
-    Construye las features estacionarias V0.1.
-    Toda métrica aquí solo usa datos en el tiempo t o anteriores.
-    """
+    """Construye características macro y micro (V0.2)"""
     X = pd.DataFrame(index=df.index)
     
     close = df['close']
@@ -36,38 +32,51 @@ def build_features(df):
     open_p = df['open']
     vol = df['volume']
 
-    # 1. Retornos Logarítmicos (Multi-escala)
-    # log(Pt / Pt-1) es el estándar matemático para series financieras
+    # --- 1. CLÁSICOS (Momentum y Retornos) ---
     X['log_ret_15m'] = np.log(close / close.shift(1))
     X['log_ret_1h'] = np.log(close / close.shift(4))
     X['log_ret_4h'] = np.log(close / close.shift(16))
-
-    # 2. Medias Móviles (Distancias porcentuales, no precios absolutos)
-    for span in [20, 50, 200]:
-        ema = close.ewm(span=span, adjust=False).mean()
-        X[f'dist_ema_{span}'] = (close - ema) / ema
-
-    # 3. Momento (RSI)
     X['rsi_14'] = calc_rsi(close, 14)
 
-    # 4. Volatilidad (ATR Relativo)
-    # True Range = max(H-L, abs(H-Cp), abs(L-Cp))
+    # --- 2. DISTANCIAS Y ALINEACIÓN DE TENDENCIA (Trend Regime) ---
+    ema20 = close.ewm(span=20, adjust=False).mean()
+    ema50 = close.ewm(span=50, adjust=False).mean()
+    ema200 = close.ewm(span=200, adjust=False).mean()
+    
+    X['dist_ema_20'] = (close - ema20) / ema20
+    X['dist_ema_50'] = (close - ema50) / ema50
+    X['dist_ema_200'] = (close - ema200) / ema200
+    
+    # Cuantificador de tendencia: +1 (Alcista total), -1 (Bajista total), 0 (Rango/Cruce)
+    trend_up = (ema20 > ema50) & (ema50 > ema200)
+    trend_down = (ema20 < ema50) & (ema50 < ema200)
+    X['trend_alignment'] = np.where(trend_up, 1.0, np.where(trend_down, -1.0, 0.0))
+
+    # --- 3. REGÍMENES DE VOLATILIDAD (ATR Expansion & Bollinger) ---
     prev_close = close.shift(1)
-    tr1 = high - low
-    tr2 = (high - prev_close).abs()
-    tr3 = (low - prev_close).abs()
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    tr = pd.concat([high - low, (high - prev_close).abs(), (low - prev_close).abs()], axis=1).max(axis=1)
     
     atr_14 = tr.rolling(14).mean()
-    X['atr_rel_14'] = atr_14 / close  # Adimensional
+    atr_50 = tr.rolling(50).mean()
+    
+    X['atr_rel_14'] = atr_14 / close
+    X['volatility_regime'] = atr_14 / atr_50  # >1 indica expansión de volatilidad
+    
+    # Bollinger Band Width (Compresión del precio)
+    sma_20 = close.rolling(20).mean()
+    std_20 = close.rolling(20).std()
+    X['bb_width'] = (std_20 * 2) / sma_20
 
-    # 5. Micro-Estructura de la vela actual
-    candle_range = (high - low).replace(0, 1e-8)  # Evitar división por cero
+    # --- 4. ESTADÍSTICA DE COLA (Skewness y Kurtosis en ventana de 5 horas) ---
+    window = 20 # 20 velas de 15m = 5 horas
+    X['ret_skewness'] = X['log_ret_15m'].rolling(window).skew()
+    X['ret_kurtosis'] = X['log_ret_15m'].rolling(window).kurt()
+
+    # --- 5. MICRO-ESTRUCTURA Y VOLUMEN ---
+    candle_range = (high - low).replace(0, 1e-8)
     X['body_ratio'] = (close - open_p).abs() / candle_range
     X['upper_wick_ratio'] = (high - np.maximum(open_p, close)) / candle_range
-    X['lower_wick_ratio'] = (np.minimum(open_p, close) - low) / candle_range
-
-    # 6. Volumen Relativo
+    
     vol_sma_50 = vol.rolling(50).mean().replace(0, 1e-8)
     X['vol_rel_50'] = vol / vol_sma_50
 
@@ -78,33 +87,25 @@ def main():
     config = load_config()
     symbols = config['ingestion']['symbols']
     
-    print("\n🧠 Iniciando Feature Engineering (Matriz X)...")
+    print("\n🧠 Iniciando Feature Engineering Avanzado V0.2...")
     
     for symbol in symbols:
         parquet_path = os.path.join(CANONICAL_DIR, f"symbol={symbol}", "data.parquet")
-        
-        if not os.path.exists(parquet_path):
-            continue
+        if not os.path.exists(parquet_path): continue
             
-        print(f"[*] Construyendo features estacionarias para {symbol}...")
+        print(f"[*] Construyendo features para {symbol}...")
         df = pd.read_parquet(parquet_path)
         
-        # Construir matriz X
         X = build_features(df)
+        X.dropna(inplace=True) # Elimina los primeros NaNs causados por ventanas largas (200 periodos)
         
-        # Eliminar filas con NaNs iniciales (causadas por los periodos de cálculo como EMA200)
-        X.dropna(inplace=True)
-        
-        # Guardar en disco
         out_dir = os.path.join(FEATURES_DIR, f"symbol={symbol}")
         os.makedirs(out_dir, exist_ok=True)
         out_file = os.path.join(out_dir, "features.parquet")
         
         table = pa.Table.from_pandas(X)
         pq.write_table(table, out_file, compression='snappy')
-        
         print(f"  [OK] Matriz X generada con {len(X.columns)} columnas.")
-        print(f"  [OK] Muestras útiles tras calentar indicadores: {len(X):,}")
 
 if __name__ == "__main__":
     main()

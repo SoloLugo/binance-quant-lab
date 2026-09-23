@@ -3,7 +3,7 @@ import yaml
 import numpy as np
 import pandas as pd
 import joblib
-from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import brier_score_loss, roc_auc_score, classification_report
 
@@ -18,7 +18,7 @@ def load_config():
         return yaml.safe_load(f)
 
 def train_and_evaluate(symbol, config):
-    print(f"\n{'='*50}\nEntrenando Modelo para {symbol}\n{'='*50}")
+    print(f"\n{'='*50}\nEntrenando Modelo V0.2 (Gradient Boosting) para {symbol}\n{'='*50}")
     
     features_path = os.path.join(FEATURES_DIR, f"symbol={symbol}", "features.parquet")
     labels_path = os.path.join(LABELS_DIR, f"symbol={symbol}", "labels.parquet")
@@ -47,33 +47,39 @@ def train_and_evaluate(symbol, config):
     X_test = test_df[features_cols]
     y_test = test_df['target']
 
-    # Entrenar Escalador y Modelo
+    # Escalador
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
-    model = LogisticRegression(class_weight='balanced', random_state=42, max_iter=1000)
+    # NUEVO MOTOR: HistGradientBoosting (No-Lineal)
+    print("[*] Ajustando Árboles de Decisión Secuenciales (Gradient Boosting)...")
+    model = HistGradientBoostingClassifier(
+        learning_rate=0.05, 
+        max_iter=300,            # 300 árboles construidos uno sobre otro
+        max_depth=5,             # Profundidad máxima de cada árbol
+        class_weight='balanced', # Compensar que hay más pérdidas que ganancias
+        random_state=42
+    )
     model.fit(X_train_scaled, y_train)
 
     # Evaluación
     y_pred_prob = model.predict_proba(X_test_scaled)[:, 1]
-    y_pred_class = model.predict(X_test_scaled)
-
     roc_auc = roc_auc_score(y_test, y_pred_prob)
+    
     print(f"[*] ROC-AUC Score : {roc_auc:.4f}")
     
-    # GUARDAR EL MODELO FÍSICAMENTE
+    # GUARDAR EL MODELO V0.2
     symbol_out_dir = os.path.join(OUTPUTS_DIR, f"symbol={symbol}")
     os.makedirs(symbol_out_dir, exist_ok=True)
     
-    model_path = os.path.join(symbol_out_dir, "logreg_v01.joblib")
-    scaler_path = os.path.join(symbol_out_dir, "scaler_v01.joblib")
+    model_path = os.path.join(symbol_out_dir, "model_v02.joblib")
+    scaler_path = os.path.join(symbol_out_dir, "scaler_v02.joblib")
     
     joblib.dump(model, model_path)
     joblib.dump(scaler, scaler_path)
     
-    print(f"  [OK] Modelo guardado en: {model_path}")
-    print(f"  [OK] Escalador guardado en: {scaler_path}")
+    print(f"  [OK] Modelo V0.2 guardado en: {model_path}")
 
 def main():
     config = load_config()

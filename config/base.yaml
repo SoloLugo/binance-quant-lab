@@ -7,6 +7,7 @@ ingestion:
 
 strategy:
   direction: "LONG"
-  risk_pct: 0.01          # 1% del precio representará nuestro 1R (SL)
+  risk_pct: 0.01          # 1% del precio representará nuestro 1R (SL) lo vamos a ignorar, ya que el SL lo vamos a calcular en función del ATR
+  atr_multiplier: 1.5       # El Stop Loss (1R) se colocará a 1.5 veces la volatilidad actual
   risk_reward_ratio: 2.0  # El Take Profit será del 2% (2R)
   horizon_bars: 30        # Límite de 30 velas (7.5 horas)

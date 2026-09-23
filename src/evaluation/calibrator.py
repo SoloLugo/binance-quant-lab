@@ -33,10 +33,10 @@ def evaluate_thresholds(symbol, config):
     X_test = test_df[pd.read_parquet(features_path).columns]
     y_test = test_df['target'].values
     
-    # 2. Cargar el "cerebro" (Modelo y Escalador)
+    # 2. Cargar el "cerebro" V0.2 (Modelo y Escalador)
     symbol_out_dir = os.path.join(OUTPUTS_DIR, f"symbol={symbol}")
-    model_path = os.path.join(symbol_out_dir, "logreg_v01.joblib")
-    scaler_path = os.path.join(symbol_out_dir, "scaler_v01.joblib")
+    model_path = os.path.join(symbol_out_dir, "model_v02.joblib")
+    scaler_path = os.path.join(symbol_out_dir, "scaler_v02.joblib")
     
     if not (os.path.exists(model_path) and os.path.exists(scaler_path)):
         print(f"[!] Faltan los archivos .joblib para {symbol}. Entrena el modelo primero.")

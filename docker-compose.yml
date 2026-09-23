@@ -1,0 +1,5 @@
+services:
+  quant-env:
+    build: .
+    volumes:
+      - .:/app

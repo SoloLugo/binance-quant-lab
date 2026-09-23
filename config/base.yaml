@@ -1,0 +1,12 @@
+ingestion:
+  symbols: 
+    - "BTCUSDT"
+    - "ETHUSDT"
+  timeframe: "15m"
+  start_date: "2024-01-01"
+
+strategy:
+  direction: "LONG"
+  risk_pct: 0.01          # 1% del precio representará nuestro 1R (SL)
+  risk_reward_ratio: 2.0  # El Take Profit será del 2% (2R)
+  horizon_bars: 30        # Límite de 30 velas (7.5 horas)

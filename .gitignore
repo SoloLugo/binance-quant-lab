@@ -1,0 +1,12 @@
+# Ignorar bases de datos y archivos pesados
+data/raw/*.zip
+data/raw/*.CHECKSUM
+data/canonical/
+data/features/
+data/labels/
+outputs/
+
+# Archivos de Python y sistema
+__pycache__/
+*.pyc
+.env

@@ -15,7 +15,7 @@ def load_config():
         return yaml.safe_load(f)
 
 def evaluate_thresholds(symbol, config):
-    print(f"\n{'='*70}\nAnálisis de Umbrales con Fricción (Purga Temporal V0.3) para {symbol}\n{'='*70}")
+    print(f"\n{'='*70}\nAnálisis de Umbrales (Probabilidades Calibradas) para {symbol}\n{'='*70}")
     
     features_path = os.path.join(FEATURES_DIR, f"symbol={symbol}", "features.parquet")
     labels_path = os.path.join(LABELS_DIR, f"symbol={symbol}", "labels.parquet")
@@ -25,55 +25,42 @@ def evaluate_thresholds(symbol, config):
     df = df[df['label'] != -2].dropna()
     df['target'] = (df['label'] == 1).astype(int)
     
-    # --- CORRECCIÓN: SPLIT TEMPORAL ESTRICTO CON PURGA ---
-    split_idx = int(len(df) * 0.8)
-    train_df = df.iloc[:split_idx]
-    last_train_time = train_df.index[-1]
-    
+    # Split idéntico al trainer para aislar el Test Set (Último 20%)
     horizon_bars = config['strategy'].get('horizon_bars', 30)
-    purge_timedelta = pd.Timedelta(minutes=15 * horizon_bars)
+    purge_td = pd.Timedelta(minutes=15 * horizon_bars)
+
+    idx_60 = int(len(df) * 0.6)
+    idx_80 = int(len(df) * 0.8)
+
+    train_df = df.iloc[:idx_60]
+    val_start = train_df.index[-1] + purge_td
+    val_df_full = df[df.index > val_start]
     
-    test_start_time = last_train_time + purge_timedelta
-    test_df = df[df.index > test_start_time]
-    # -----------------------------------------------------
-    
-    if len(test_df) == 0:
-        print(f"[!] Set de prueba vacío para {symbol} después de purgar.")
-        return
+    val_df = val_df_full.iloc[:(idx_80 - idx_60)]
+    test_start = val_df.index[-1] + purge_td
+    test_df = df[df.index > test_start]
 
     X_test = test_df[pd.read_parquet(features_path).columns]
     y_test = test_df['target'].values
     
     symbol_out_dir = os.path.join(OUTPUTS_DIR, f"symbol={symbol}")
-    model_path = os.path.join(symbol_out_dir, "model_v02.joblib")
-    scaler_path = os.path.join(symbol_out_dir, "scaler_v02.joblib")
-    
-    if not (os.path.exists(model_path) and os.path.exists(scaler_path)):
-        print(f"[!] Faltan los archivos del modelo para {symbol}.")
-        return
-        
-    model = joblib.load(model_path)
-    scaler = joblib.load(scaler_path)
+    calibrated_model = joblib.load(os.path.join(symbol_out_dir, "model_v02.joblib"))
+    scaler = joblib.load(os.path.join(symbol_out_dir, "scaler_v02.joblib"))
     
     X_test_scaled = scaler.transform(X_test)
-    y_pred_prob = model.predict_proba(X_test_scaled)[:, 1]
+    y_pred_prob = calibrated_model.predict_proba(X_test_scaled)[:, 1]
     
     rr_ratio = config['strategy'].get('risk_reward_ratio', 2.0)
-    
-    # COSTO DE FRICCIÓN (Comisiones + Slippage)
     costo_friccion_r = 0.10 
     
-    print(f"[*] Riesgo Bruto: 1.00R | Recompensa: {rr_ratio}R")
-    print(f"[*] Fricción (Fees + Slippage): -{costo_friccion_r}R por operación")
-    print(f"\n{'Umbral':<10} | {'Ops':<6} | {'Win Rate':<10} | {'EV Bruto':<10} | {'EV Neto (Real)':<12}")
-    print("-" * 70)
+    print(f"[*] Fricción: -{costo_friccion_r}R por operación")
+    print(f"\n{'Umbral':<10} | {'Ops':<6} | {'Win Rate':<10} | {'EV Bruto':<10} | {'EV Neto':<12}")
     
     for threshold in [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80]:
         signals = y_pred_prob >= threshold
         total_trades = np.sum(signals)
         
         if total_trades == 0:
-            print(f"{threshold:>7.0%}    | {total_trades:<6} | {'N/A':<10} | {'N/A':<10} | {'N/A':<12}")
             continue
             
         wins = np.sum(y_test[signals] == 1)
@@ -82,16 +69,11 @@ def evaluate_thresholds(symbol, config):
         ev_bruto = (win_rate * rr_ratio) - ((1 - win_rate) * 1)
         ev_neto = ev_bruto - costo_friccion_r
         
-        bruto_str = f"{ev_bruto:+.3f} R"
-        neto_str = f"{ev_neto:+.3f} R"
-        
-        print(f"{threshold:>7.0%}    | {total_trades:<6} | {win_rate:>7.1%}    | {bruto_str:<10} | {neto_str:<12}")
+        print(f"{threshold:>7.0%}    | {total_trades:<6} | {win_rate:>7.1%}    | {ev_bruto:+.3f} R  | {ev_neto:+.3f} R")
 
 def main():
     config = load_config()
-    symbols = config['ingestion']['symbols']
-    
-    for symbol in symbols:
+    for symbol in config['ingestion']['symbols']:
         evaluate_thresholds(symbol, config)
 
 if __name__ == "__main__":

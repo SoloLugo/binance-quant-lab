@@ -15,19 +15,32 @@ def load_config():
         return yaml.safe_load(f)
 
 def evaluate_thresholds(symbol, config):
-    print(f"\n{'='*70}\nAnálisis de Umbrales con Fricción Real (Net EV) para {symbol}\n{'='*70}")
+    print(f"\n{'='*70}\nAnálisis de Umbrales con Fricción (Purga Temporal V0.3) para {symbol}\n{'='*70}")
     
     features_path = os.path.join(FEATURES_DIR, f"symbol={symbol}", "features.parquet")
     labels_path = os.path.join(LABELS_DIR, f"symbol={symbol}", "labels.parquet")
     
     df = pd.read_parquet(features_path).join(pd.read_parquet(labels_path), how='inner')
+    df.index = pd.to_datetime(df.index)
     df = df[df['label'] != -2].dropna()
     df['target'] = (df['label'] == 1).astype(int)
     
+    # --- CORRECCIÓN: SPLIT TEMPORAL ESTRICTO CON PURGA ---
     split_idx = int(len(df) * 0.8)
-    horizon = config['strategy'].get('horizon_bars', 30)
-    test_df = df.iloc[split_idx + horizon:]
+    train_df = df.iloc[:split_idx]
+    last_train_time = train_df.index[-1]
     
+    horizon_bars = config['strategy'].get('horizon_bars', 30)
+    purge_timedelta = pd.Timedelta(minutes=15 * horizon_bars)
+    
+    test_start_time = last_train_time + purge_timedelta
+    test_df = df[df.index > test_start_time]
+    # -----------------------------------------------------
+    
+    if len(test_df) == 0:
+        print(f"[!] Set de prueba vacío para {symbol} después de purgar.")
+        return
+
     X_test = test_df[pd.read_parquet(features_path).columns]
     y_test = test_df['target'].values
     
@@ -48,11 +61,10 @@ def evaluate_thresholds(symbol, config):
     rr_ratio = config['strategy'].get('risk_reward_ratio', 2.0)
     
     # COSTO DE FRICCIÓN (Comisiones + Slippage)
-    # Asumimos que nos cuesta 0.10 R abrir y cerrar cada posición
     costo_friccion_r = 0.10 
     
     print(f"[*] Riesgo Bruto: 1.00R | Recompensa: {rr_ratio}R")
-    print(f"[*] Fricción (Fees + Slippage): -{costo_friccion_r}R cobrados por cada operación")
+    print(f"[*] Fricción (Fees + Slippage): -{costo_friccion_r}R por operación")
     print(f"\n{'Umbral':<10} | {'Ops':<6} | {'Win Rate':<10} | {'EV Bruto':<10} | {'EV Neto (Real)':<12}")
     print("-" * 70)
     
@@ -67,10 +79,7 @@ def evaluate_thresholds(symbol, config):
         wins = np.sum(y_test[signals] == 1)
         win_rate = wins / total_trades
         
-        # EV Bruto = Laboratorio Teórico
         ev_bruto = (win_rate * rr_ratio) - ((1 - win_rate) * 1)
-        
-        # EV Neto = Mundo Real (EV Bruto - Costos de Binance)
         ev_neto = ev_bruto - costo_friccion_r
         
         bruto_str = f"{ev_bruto:+.3f} R"

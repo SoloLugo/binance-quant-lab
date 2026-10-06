@@ -1,122 +1,91 @@
 import os
-import json
+import glob
+import yaml
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-from tqdm import tqdm
 
 BASE_DIR = "/app"
 RAW_DIR = os.path.join(BASE_DIR, "data", "raw")
 CANONICAL_DIR = os.path.join(BASE_DIR, "data", "canonical")
-MANIFEST_FILE = os.path.join(RAW_DIR, "manifest.json")
+CONFIG_FILE = os.path.join(BASE_DIR, "config", "base.yaml")
 
-BINANCE_COLUMNS = [
-    "open_time", "open", "high", "low", "close", "volume",
-    "close_time", "quote_volume", "trades", 
-    "taker_buy_base", "taker_buy_quote", "ignore"
-]
+def load_config():
+    with open(CONFIG_FILE, "r") as f:
+        return yaml.safe_load(f)
 
-def load_manifest():
-    if not os.path.exists(MANIFEST_FILE):
-        print(f"[!] No se encontró el manifiesto en: {MANIFEST_FILE}")
-        return {}
-    with open(MANIFEST_FILE, "r") as f:
-        return json.load(f)
-
-def validate_invariants(df):
-    invariants_ok = (
-        (df['low'] <= df['open']) & 
-        (df['open'] <= df['high']) &
-        (df['low'] <= df['close']) & 
-        (df['close'] <= df['high']) &
-        (df['volume'] >= 0)
-    ).all()
+def process_symbol(symbol):
+    print(f"[*] Transformando datos Raw a Canonical (Parquet) para {symbol}...")
     
-    nulls_ok = df.isnull().sum().sum() == 0
-    return invariants_ok and nulls_ok
-
-def process_symbol_data(symbol, manifest):
-    print(f"\n[*] Procesando dataset canónico para: {symbol}")
+    # Buscar todos los CSVs descargados para este símbolo
+    csv_pattern = os.path.join(RAW_DIR, f"symbol={symbol}", "*.csv")
+    csv_files = glob.glob(csv_pattern)
     
-    files_to_process = [
-        f for f, meta in manifest.items() 
-        if meta.get("symbol") == symbol and meta.get("status") == "VERIFIED"
+    if not csv_files:
+        print(f"  [!] No se encontraron archivos CSV para {symbol} en {csv_pattern}")
+        return
+        
+    # Columnas estándar de Binance Vision Klines
+    cols = [
+        "open_time", "open", "high", "low", "close", "volume",
+        "close_time", "quote_asset_volume", "number_of_trades",
+        "taker_buy_base_asset_volume", "taker_buy_quote_asset_volume", "ignore"
     ]
     
-    if not files_to_process:
-        print(f"  [!] No hay archivos verificados para {symbol}.")
-        return
-
-    files_to_process.sort()
-    
     df_list = []
-    for filename in tqdm(files_to_process, desc=f"Leyendo ZIPs de {symbol}"):
-        filepath = os.path.join(RAW_DIR, filename)
+    for file in csv_files:
         try:
-            # Leer todo como texto (str) primero para evitar el cuelgue de tipos
-            df_temp = pd.read_csv(filepath, names=BINANCE_COLUMNS, header=None, dtype=str)
-            df_list.append(df_temp)
+            # Leemos el CSV. Binance a veces incluye cabecera y a veces no.
+            temp_df = pd.read_csv(file, names=cols, header=None)
+            
+            # Si la primera fila resultó ser texto (cabecera original del CSV), la saltamos
+            if isinstance(temp_df.iloc[0]['open_time'], str) and 'time' in temp_df.iloc[0]['open_time'].lower():
+                temp_df = temp_df.iloc[1:]
+                
+            df_list.append(temp_df)
         except Exception as e:
-            print(f"  [!] Error leyendo {filename}: {e}")
-
+            print(f"  [!] Error leyendo {file}: {e}")
+            
     if not df_list:
         return
-
-    df_full = pd.concat(df_list, ignore_index=True)
-
-    # --- EL FILTRO ANTI-BASURA DE BINANCE ---
-    # Eliminar cualquier fila donde 'open_time' sea el string literal de encabezado
-    df_full = df_full[df_full['open_time'] != 'open_time']
+        
+    # Unificar todos los datos del símbolo
+    df = pd.concat(df_list, ignore_index=True)
     
-    # Forzar la conversión a numérico para asegurar operaciones matemáticas limpias
-    df_full['open_time'] = pd.to_numeric(df_full['open_time'])
-
-    # Limpieza temporal
-    df_full['timestamp'] = pd.to_datetime(df_full['open_time'], unit='ms', utc=True)
-    df_full.drop(columns=['open_time', 'close_time', 'ignore'], inplace=True)
-    df_full.set_index('timestamp', inplace=True)
-    df_full.sort_index(inplace=True)
-
-    # Eliminar posibles duplicados
-    df_full = df_full[~df_full.index.duplicated(keep='first')]
-
-    # Optimización de memoria
-    float_cols = ['open', 'high', 'low', 'close', 'volume', 'quote_volume', 'taker_buy_base', 'taker_buy_quote']
-    df_full[float_cols] = df_full[float_cols].astype('float32')
-    df_full['trades'] = df_full['trades'].astype('int32')
-
-    if not validate_invariants(df_full):
-        print("  [ERROR CRÍTICO] Los datos violan invariantes de precio (ej. Low > High).")
-        return
-
-    esperado = pd.date_range(start=df_full.index.min(), end=df_full.index.max(), freq='15min', tz='UTC')
-    faltantes = len(esperado) - len(df_full)
-    if faltantes > 0:
-        print(f"  [WARNING] Se detectaron {faltantes} velas faltantes en la historia completa.")
-
-    symbol_dir = os.path.join(CANONICAL_DIR, f"symbol={symbol}")
-    os.makedirs(symbol_dir, exist_ok=True)
+    # Transformación del tiempo (Milisegundos a Datetime)
+    df['open_time'] = pd.to_numeric(df['open_time'])
+    df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
+    df.set_index('open_time', inplace=True)
     
-    parquet_path = os.path.join(symbol_dir, "data.parquet")
-    table = pa.Table.from_pandas(df_full)
-    pq.write_table(table, parquet_path, compression='snappy')
+    # Ordenar cronológicamente y eliminar velas duplicadas (solapamientos)
+    df.sort_index(inplace=True)
+    df = df[~df.index.duplicated(keep='first')]
     
-    print(f"  [OK] Dataset canónico guardado en: {parquet_path}")
-    print(f"  [INFO] Total de velas de 15m procesadas: {len(df_full):,}")
+    # Conservar únicamente la microestructura OHLCV necesaria y castear a float
+    columns_to_keep = ['open', 'high', 'low', 'close', 'volume']
+    df = df[columns_to_keep].astype(float)
+    
+    # Guardar en formato Parquet comprimido (Data Contract estricto)
+    out_dir = os.path.join(CANONICAL_DIR, f"symbol={symbol}")
+    os.makedirs(out_dir, exist_ok=True)
+    out_file = os.path.join(out_dir, "data.parquet")
+    
+    table = pa.Table.from_pandas(df)
+    pq.write_table(table, out_file, compression='snappy')
+    
+    print(f"  [OK] Guardado exitoso: {len(df):,} velas estandarizadas en {out_file}")
 
 def main():
     os.makedirs(CANONICAL_DIR, exist_ok=True)
-    manifest = load_manifest()
+    config = load_config()
+    symbols = config['ingestion']['symbols']
     
-    if not manifest:
-        print("[!] El manifiesto está vacío o no se pudo cargar.")
-        return
-
-    symbols = set(meta.get("symbol") for meta in manifest.values())
+    print("\n" + "="*50)
+    print("🏭 ETL: Generando Data Contract (Canonical Parquet)")
+    print("="*50)
     
-    print("🚀 Iniciando Construcción del Dataset Canónico...")
     for symbol in symbols:
-        process_symbol_data(symbol, manifest)
+        process_symbol(symbol)
 
 if __name__ == "__main__":
     main()

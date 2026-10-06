@@ -19,7 +19,7 @@ def load_config():
         return yaml.safe_load(f)
 
 def train_and_evaluate(symbol, config):
-    print(f"\n{'='*50}\nEntrenando y Calibrando Modelo para {symbol}\n{'='*50}")
+    print(f"\n{'='*50}\nEntrenando Modelo V0.4 (Probabilidades Naturales + Sigmoid) para {symbol}\n{'='*50}")
     
     features_path = os.path.join(FEATURES_DIR, f"symbol={symbol}", "features.parquet")
     labels_path = os.path.join(LABELS_DIR, f"symbol={symbol}", "labels.parquet")
@@ -36,7 +36,7 @@ def train_and_evaluate(symbol, config):
     df['target'] = (df['label'] == 1).astype(int)
     features_cols = X_df.columns.tolist()
 
-    # Split: 60% Train, 20% Val, 20% Test
+    # Split: 60% Train, 20% Val, 20% Test (Con purga temporal)
     horizon_bars = config['strategy'].get('horizon_bars', 30)
     purge_td = pd.Timedelta(minutes=15 * horizon_bars)
 
@@ -62,12 +62,19 @@ def train_and_evaluate(symbol, config):
     X_val_scaled = scaler.transform(X_val)
     X_test_scaled = scaler.transform(X_test)
 
-    # 1. Entrenar modelo raw
-    base_model = HistGradientBoostingClassifier(learning_rate=0.05, max_iter=300, max_depth=5, class_weight='balanced', random_state=42)
+    # 1. Entrenar modelo raw SIN class_weight='balanced'
+    # Dejamos que el modelo aprenda la distribución natural del mercado
+    base_model = HistGradientBoostingClassifier(
+        learning_rate=0.05, 
+        max_iter=300, 
+        max_depth=5, 
+        random_state=42
+    )
     base_model.fit(X_train_scaled, y_train)
 
-    # 2. Calibración Isotónica en Validation Set
-    calibrated_model = CalibratedClassifierCV(estimator=base_model, method='isotonic', cv='prefit')
+    # 2. Calibración Sigmoide (Platt Scaling) en Validation Set
+    # Sigmoid evita el colapso en escalones que genera isotonic en muestras pequeñas
+    calibrated_model = CalibratedClassifierCV(estimator=base_model, method='sigmoid', cv='prefit')
     calibrated_model.fit(X_val_scaled, y_val)
 
     # 3. Test Locked

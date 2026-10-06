@@ -1,60 +1,50 @@
-# Laboratorio Cuantitativo de Probabilidad para Binance Futures
+# 🔬 Binance Quant Lab
 
-## Descripcion General
+Un laboratorio de investigación cuantitativa de grado institucional enfocado en la validación estadística, calibración de probabilidades y rechazo estricto del *curve-fitting* (sobreajuste). 
 
-Este proyecto es un laboratorio de investigación cuantitativa diseñado para ejecutarse de forma completamente reproducible en contenedores de Docker (optimizado tanto para arquitecturas x86 como ARM64, como placas Orange Pi). Su objetivo principal no es adivinar la dirección del mercado, sino calcular una probabilidad condicional estricta: predecir la probabilidad de que el precio alcance un objetivo de Take Profit antes de tocar un límite de Stop Loss ($P(TP \text{ antes de } SL)$) utilizando datos históricos de futuros de Binance en temporalidades de 15 minutos.
+**Nota Filosófica:** Este proyecto no es un "bot de trading" diseñado para mostrar backtests perfectos. Es un *Research Gate* (Muro de Contención Científico) diseñado para destruir hipótesis débiles mediante validación en ventanas rodantes (Walk-Forward) antes de arriesgar un solo centavo.
 
-## Conceptos Teóricos y Financieros
+---
 
-El diseño de este sistema se fundamenta en principios matemáticos y de microestructura de mercado:
+## 🏗️ Arquitectura del Sistema
 
-- **Probabilidad Condicional y Clasificación Binaria:** El modelo estima la probabilidad de éxito de una operación en función del estado actual de las variables del mercado, transformando un problema financiero en un modelo matemático supervisado.
-- **Gestión de Riesgo y R-Multiples:** Las operaciones se estructuran bajo un modelo de riesgo fijo (1R de pérdida por 2R de beneficio). Esto permite estudiar el Valor Esperado (Expectancy) para determinar el umbral de probabilidad necesario que supere el punto de equilibrio (break-even).
-- **Microestructura de Mercado (Futuros USD-M):** Análisis de contratos perpetuos y derivados en Binance, permitiendo capturar dinámicas tanto alcistas como bajistas.
-- **Integridad Temporal (Prevención de Fuga de Datos):** Para evitar el sesgo de supervivencia y el look-ahead bias, se implementan divisiones temporales estrictas (Time-based Train/Test Split) acompañadas de una estrategia de purga (Purge) que aísla el horizonte de las etiquetas.
+El laboratorio opera bajo un pipeline ETL estricto, ejecutado íntegramente en contenedores Docker (optimizado para arquitectura ARM64 / Orange Pi):
 
-## Arquitectura del Pipeline y Componentes
+1. **Ingestion Engine (`src/data/ingestion.py`):** Descarga de datos granulares (Klines, Open Interest, Funding Rates) desde Binance Vision mediante validación criptográfica (SHA-256).
+2. **Canonical Data Contract (`src/data/canonical.py`):** Fusión de series temporales asíncronas con resolución de 15 minutos, almacenadas en formato `.parquet` comprimido.
+3. **Feature Engine (`src/features/builder.py`):** Generación de variables sin *look-ahead bias*, divididas por familias:
+   - *Familia A:* Price & Technicals (Volatilidad ATR, Momentum RSI).
+   - *Familia B:* Smart Money Concepts (Swing Highs/Lows, Liquidity Sweeps, Order Blocks paramétricos).
+   - *Familia C:* Derivados (Z-Score de Tasas de Financiación, Flujo de Open Interest).
+4. **Labeling Engine:** Generación de etiquetas de clasificación binaria (Target TP before SL), aislando explícitamente casos ambiguos (TP y SL en la misma vela) y bloqueos por tiempo (TIMEOUT).
 
-El laboratorio está estructurado en módulos secuenciales independientes:
+---
 
-1. **Ingeccion (data/raw/):** El módulo `downloader.py` se conecta a la API de Binance Vision para descargar archivos mensuales de klines de 15 minutos y valida su integridad mediante criptografía y archivos `.CHECKSUM`, generando un manifiesto centralizado (`manifest.json`).
-2. **Canonicalizacion (data/canonical/):** El script `canonical.py` unifica la serie temporal, limpia inconsistencias de formato, valida invariantes matemáticas del precio (como prohibir que el mínimo sea mayor al máximo) y comprime la información en formato columnar Parquet utilizando tipos de datos optimizados para memoria (`float32`).
-3. **Etiquetado de Trayectoria (data/labels/):** El motor `labeler.py` simula la evolución futura del precio vela por vela dentro de un horizonte determinado para clasificar cada punto en resultados de éxito (1), fracaso (0), tiempo agotado (-1) o casos ambiguos (-2) que son descartados por rigor estadístico.
-4. **Ingenieria de Características (data/features/):** El script `builder.py` calcula variables cuantitativas puramente estacionarias (retornos logarítmicos multi-escala, distancias relativas a medias móviles exponenciales, RSI, ATR relativo y microestructura de velas).
-5. **Entrenamiento y Modelado (outputs/models/):** El módulo `trainer.py` entrena un modelo base de Regresión Logística con regularización L2 y balanceo de clases, serializando los resultados y el escalador mediante `joblib`.
-6. **Calibrador y Análisis de Umbrales:** El script `calibrator.py` evalúa el rendimiento fuera de muestra simulando la rentabilidad teórica bajo diferentes niveles de exigencia de probabilidad (Thresholds).
+## 🧠 Modelado y Motor Cuantitativo
 
-## Arquitectura del Modelo Cuantitativo
+Tras rigurosas pruebas de ablación y comparación de *Baselines*, el laboratorio utiliza modelos lineales fuertemente regularizados para evitar la captura de ruido estocástico inherente a los micro-regímenes de criptomonedas.
 
-Tras rigurosas pruebas de validación (Baseline vs Advanced), el laboratorio utiliza un modelo lineal para evitar el sobreajuste (overfitting) frente al ruido natural de los mercados financieros:
+- **Baseline Oficial:** Regresión Logística Lineal (L2 Penalty).
+- **Calibración:** Platt Scaling (Sigmoid) calibrado en un set de validación estrictamente aislado, evaluado mediante *Brier Score*, *Log Loss* y *Reliability Curves*.
+- **Data Splitting & Purging:** Prevención de fugas de datos (Data Leakage) utilizando purga matemática (`pd.Timedelta`) basada en el horizonte máximo de retención de la operación. 
+- **Walk-Forward Validation (`src/evaluation/walk_forward.py`):** Evaluación de robustez mediante 4 épocas rodantes (Ventanas expansivas) para confirmar adaptabilidad a distintos regímenes macroeconómicos.
 
-- **Modelo Base:** Regresión Logística (Logistic Regression) con regularización L2.
-- **Calibración de Probabilidades:** Platt Scaling (Sigmoid) calibrado en un set de validación estrictamente aislado.
-- **Data Splitting:** Temporal split (60% Train / 20% Val / 20% Test) con purga de horizonte (`pd.Timedelta`) y test automatizado de fuga de datos.
-- **Trazabilidad:** Cada entrenamiento genera un `experiment_metadata.json` que registra el hash del commit, fechas exactas de entrenamiento y métricas Brier/ROC-AUC.
+---
 
-## Guia de Instalacion y Ejecucion (Desde Cero)
+## 🛡️ Trazabilidad y Experimentación (Experiment Tracker)
 
-Si clonas este repositorio en una nueva máquina (PC con Windows/Linux o placa de desarrollo), asegúrate de tener instalado Docker y Docker Compose. Luego, sigue estos pasos:
+Garantizamos reproducibilidad científica. Cada entrenamiento genera automáticamente un `experiment_metadata.json` que registra:
+- Hash del commit de Git en el momento de la ejecución.
+- Periodos exactos de Train / Val / Test.
+- Parámetros del modelo y semila aleatoria (*Random Seed*).
+- Métricas fuera de muestra (ROC-AUC, Brier Score).
 
-### 1. Clonar el repositorio
-```bash
-git clone https://github.com/TU-USUARIO/binance-quant-lab.git
-cd binance-quant-lab
-```
-### 2. Construir el entorno de contenedores
-```bash
-docker compose build
+---
 
-docker compose run --rm quant-env python src/ingestion/downloader.py
+## 🚀 Uso Rápido (Docker)
 
-docker compose run --rm quant-env python src/processing/canonical.py
+La infraestructura está 100% aislada. Ejecuta la canalización en el siguiente orden:
 
-docker compose run --rm quant-env python src/labeling/labeler.py
-
-docker compose run --rm quant-env python src/features/builder.py
-
-docker compose run --rm quant-env python src/models/trainer.py
-
-docker compose run --rm quant-env python src/evaluation/calibrator.py
-```
+1. **Ingesta de datos:**
+   ```bash
+   docker compose run --rm quant-env python src/data/ingestion.py

@@ -14,66 +14,128 @@ def load_config():
     with open(CONFIG_FILE, "r") as f:
         return yaml.safe_load(f)
 
-def process_symbol(symbol):
-    print(f"[*] Transformando datos Raw a Canonical (Parquet) para {symbol}...")
+def process_klines(symbol_dir):
+    # Selecciona solo los CSV de precio, excluyendo Funding y OI
+    csv_files = [f for f in glob.glob(os.path.join(symbol_dir, "*.csv")) 
+                 if "fundingRate" not in f and "openInterest" not in f]
     
-    # Buscar todos los CSVs descargados para este símbolo
-    csv_pattern = os.path.join(RAW_DIR, f"symbol={symbol}", "*.csv")
-    csv_files = glob.glob(csv_pattern)
+    if not csv_files: return pd.DataFrame()
     
-    if not csv_files:
-        print(f"  [!] No se encontraron archivos CSV para {symbol} en {csv_pattern}")
-        return
-        
-    # Columnas estándar de Binance Vision Klines
     cols = [
         "open_time", "open", "high", "low", "close", "volume",
-        "close_time", "quote_asset_volume", "number_of_trades",
-        "taker_buy_base_asset_volume", "taker_buy_quote_asset_volume", "ignore"
+        "close_time", "quote_volume", "count", "taker_buy_volume", "taker_buy_quote_volume", "ignore"
     ]
     
     df_list = []
     for file in csv_files:
         try:
-            # Leemos el CSV. Binance a veces incluye cabecera y a veces no.
-            temp_df = pd.read_csv(file, names=cols, header=None)
+            df = pd.read_csv(file, names=cols, header=None)
+            if isinstance(df.iloc[0]['open_time'], str) and 'time' in df.iloc[0]['open_time'].lower():
+                df = df.iloc[1:]
+            df_list.append(df)
+        except Exception as e:
+            pass
             
-            # Si la primera fila resultó ser texto (cabecera original del CSV), la saltamos
-            if isinstance(temp_df.iloc[0]['open_time'], str) and 'time' in temp_df.iloc[0]['open_time'].lower():
-                temp_df = temp_df.iloc[1:]
-                
+    if not df_list: return pd.DataFrame()
+    df = pd.concat(df_list, ignore_index=True)
+    df['open_time'] = pd.to_datetime(pd.to_numeric(df['open_time']), unit='ms')
+    df.set_index('open_time', inplace=True)
+    df = df[~df.index.duplicated(keep='first')].sort_index()
+    return df[['open', 'high', 'low', 'close', 'volume']].astype(float)
+
+def process_open_interest(symbol_dir):
+    csv_files = glob.glob(os.path.join(symbol_dir, "*openInterestHist*.csv"))
+    if not csv_files: return pd.DataFrame()
+    
+    df_list = []
+    for file in csv_files:
+        try:
+            df = pd.read_csv(file)
+            time_col = 'timestamp' if 'timestamp' in df.columns else df.columns[0]
+            oi_col = 'sumOpenInterest' if 'sumOpenInterest' in df.columns else df.columns[1]
+            
+            temp_df = df[[time_col, oi_col]].rename(columns={time_col: 'time', oi_col: 'open_interest'})
             df_list.append(temp_df)
         except Exception as e:
-            print(f"  [!] Error leyendo {file}: {e}")
+            pass
             
-    if not df_list:
+    if not df_list: return pd.DataFrame()
+    df = pd.concat(df_list, ignore_index=True)
+    df['time'] = pd.to_numeric(df['time'], errors='coerce')
+    df.dropna(subset=['time'], inplace=True)
+    df['time'] = pd.to_datetime(df['time'], unit='ms')
+    df.set_index('time', inplace=True)
+    df = df[~df.index.duplicated(keep='first')].sort_index()
+    return df[['open_interest']].astype(float)
+
+def process_funding_rate(symbol_dir):
+    csv_files = glob.glob(os.path.join(symbol_dir, "*fundingRate*.csv"))
+    if not csv_files: return pd.DataFrame()
+    
+    df_list = []
+    for file in csv_files:
+        try:
+            df = pd.read_csv(file)
+            time_col = 'calc_time' if 'calc_time' in df.columns else 'funding_time' if 'funding_time' in df.columns else df.columns[0]
+            rate_col = 'funding_rate' if 'funding_rate' in df.columns else 'last_funding_rate' if 'last_funding_rate' in df.columns else df.columns[1]
+            
+            temp_df = df[[time_col, rate_col]].rename(columns={time_col: 'time', rate_col: 'funding_rate'})
+            df_list.append(temp_df)
+        except Exception as e:
+            pass
+            
+    if not df_list: return pd.DataFrame()
+    df = pd.concat(df_list, ignore_index=True)
+    df['time'] = pd.to_numeric(df['time'], errors='coerce')
+    df.dropna(subset=['time'], inplace=True)
+    df['time'] = pd.to_datetime(df['time'], unit='ms')
+    df.set_index('time', inplace=True)
+    df = df[~df.index.duplicated(keep='first')].sort_index()
+    return df[['funding_rate']].astype(float)
+
+def process_symbol(symbol):
+    print(f"\n[*] Procesando Contrato de Datos (Canonical) para {symbol}...")
+    symbol_dir = os.path.join(RAW_DIR, f"symbol={symbol}")
+    
+    # 1. Extraer las tres series de tiempo
+    df_klines = process_klines(symbol_dir)
+    if df_klines.empty:
+        print(f"  [!] No hay datos de velas para {symbol}")
         return
         
-    # Unificar todos los datos del símbolo
-    df = pd.concat(df_list, ignore_index=True)
+    df_oi = process_open_interest(symbol_dir)
+    df_funding = process_funding_rate(symbol_dir)
     
-    # Transformación del tiempo (Milisegundos a Datetime)
-    df['open_time'] = pd.to_numeric(df['open_time'])
-    df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
-    df.set_index('open_time', inplace=True)
+    # 2. Fusionar (Merge Time-Series)
+    print(f"  -> Velas base      : {len(df_klines):,} filas")
+    df_master = df_klines.copy()
     
-    # Ordenar cronológicamente y eliminar velas duplicadas (solapamientos)
-    df.sort_index(inplace=True)
-    df = df[~df.index.duplicated(keep='first')]
+    if not df_oi.empty:
+        print(f"  -> Alineando OI    : {len(df_oi):,} filas")
+        df_master = df_master.join(df_oi, how='left')
+        df_master['open_interest'] = df_master['open_interest'].ffill()
+    else:
+        df_master['open_interest'] = 0.0
+        
+    if not df_funding.empty:
+        print(f"  -> Alineando Fund  : {len(df_funding):,} filas")
+        df_master = df_master.join(df_funding, how='left')
+        # Expandimos el Funding rate a los bloques de 15 min donde no hubo pago usando ffill
+        df_master['funding_rate'] = df_master['funding_rate'].ffill().fillna(0.0)
+    else:
+        df_master['funding_rate'] = 0.0
+
+    df_master.dropna(inplace=True)
     
-    # Conservar únicamente la microestructura OHLCV necesaria y castear a float
-    columns_to_keep = ['open', 'high', 'low', 'close', 'volume']
-    df = df[columns_to_keep].astype(float)
-    
-    # Guardar en formato Parquet comprimido (Data Contract estricto)
+    # 3. Guardar Master Parquet
     out_dir = os.path.join(CANONICAL_DIR, f"symbol={symbol}")
     os.makedirs(out_dir, exist_ok=True)
     out_file = os.path.join(out_dir, "data.parquet")
     
-    table = pa.Table.from_pandas(df)
+    table = pa.Table.from_pandas(df_master)
     pq.write_table(table, out_file, compression='snappy')
     
-    print(f"  [OK] Guardado exitoso: {len(df):,} velas estandarizadas en {out_file}")
+    print(f"  [OK] Master Data Contract guardado en: {out_file}")
 
 def main():
     os.makedirs(CANONICAL_DIR, exist_ok=True)
@@ -81,7 +143,7 @@ def main():
     symbols = config['ingestion']['symbols']
     
     print("\n" + "="*50)
-    print("🏭 ETL: Generando Data Contract (Canonical Parquet)")
+    print("🏭 ETL: Master Data Contract (Klines + OI + Funding)")
     print("="*50)
     
     for symbol in symbols:

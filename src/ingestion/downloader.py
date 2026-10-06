@@ -3,6 +3,7 @@ import json
 import yaml
 import hashlib
 import requests
+import zipfile
 from datetime import datetime
 import pandas as pd
 from tqdm import tqdm
@@ -32,6 +33,11 @@ def save_manifest(manifest):
     os.makedirs(RAW_DIR, exist_ok=True)
     with open(MANIFEST_FILE, "w") as f:
         json.dump(manifest, f, indent=4)
+
+def extract_zip(zip_path, extract_to):
+    """Extrae los CSVs dentro de la carpeta del símbolo para el Data Contract"""
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        zip_ref.extractall(extract_to)
 
 def download_and_verify(zip_url, checksum_url, local_zip, local_checksum):
     try:
@@ -80,36 +86,68 @@ def main():
     start_date = pd.to_datetime(config['ingestion']['start_date'])
     end_date = pd.Timestamp(datetime.now().date())
     
+    # 1. Agregamos las nuevas familias de datos institucionales
+    data_types = ["klines", "fundingRate", "openInterestHist"]
+    
     print(f"\n🚀 Iniciando Motor de Ingestión en Orange Pi (ARM64)")
+    print(f"[*] Objetivos: OHLCV, Tasas de Fondeo e Interés Abierto")
     
     for symbol in symbols:
-        print(f"\n{'='*40}\nSímbolo: {symbol}\n{'='*40}")
+        print(f"\n{'='*50}\nSímbolo: {symbol}\n{'='*50}")
         meses_cerrados = pd.date_range(start=start_date.replace(day=1), end=end_date.replace(day=1) - pd.Timedelta(days=1), freq='MS')
+        
+        # Carpeta donde Canonical espera los archivos CSV
+        symbol_dir = os.path.join(RAW_DIR, f"symbol={symbol}")
+        os.makedirs(symbol_dir, exist_ok=True)
         
         for mes in meses_cerrados:
             mes_str = mes.strftime("%Y-%m")
-            zip_filename = f"{symbol}-{tf}-{mes_str}.zip"
-            zip_local = os.path.join(RAW_DIR, zip_filename)
-            checksum_local = zip_local + ".CHECKSUM"
             
-            if zip_filename in manifest and manifest[zip_filename]['status'] == 'VERIFIED' and os.path.exists(zip_local):
-                print(f"  [SKIPPED] {zip_filename} ya está descargado y verificado.")
-                continue
+            for dtype in data_types:
+                # 2. Enrutador dinámico de URLs de Binance Vision
+                if dtype == "klines":
+                    zip_filename = f"{symbol}-{tf}-{mes_str}.zip"
+                    base_url = f"https://data.binance.vision/data/futures/um/monthly/klines/{symbol}/{tf}/"
+                elif dtype == "fundingRate":
+                    # Funding Rate no usa timeframe en su nombre
+                    zip_filename = f"{symbol}-fundingRate-{mes_str}.zip"
+                    base_url = f"https://data.binance.vision/data/futures/um/monthly/fundingRate/{symbol}/"
+                elif dtype == "openInterestHist":
+                    zip_filename = f"{symbol}-openInterestHist-{tf}-{mes_str}.zip"
+                    base_url = f"https://data.binance.vision/data/futures/um/monthly/openInterestHist/{symbol}/{tf}/"
+
+                zip_local = os.path.join(RAW_DIR, zip_filename)
+                checksum_local = zip_local + ".CHECKSUM"
                 
-            print(f"[*] Procesando: {mes_str}")
-            base_url = f"https://data.binance.vision/data/futures/um/monthly/klines/{symbol}/{tf}/"
-            success, file_hash = download_and_verify(base_url + zip_filename, base_url + zip_filename + ".CHECKSUM", zip_local, checksum_local)
-            
-            if success:
-                manifest[zip_filename] = {
-                    "symbol": symbol,
-                    "type": "monthly",
-                    "date": mes_str,
-                    "hash": file_hash,
-                    "downloaded_at": datetime.now().isoformat(),
-                    "status": "VERIFIED"
-                }
-                save_manifest(manifest)
+                # Checkeo en el manifiesto
+                if zip_filename in manifest and manifest[zip_filename]['status'] == 'VERIFIED' and os.path.exists(zip_local):
+                    print(f"  [SKIPPED] {zip_filename} ya verificado.")
+                    continue
+                    
+                print(f"[*] Procesando [{dtype.upper()}]: {mes_str}")
+                full_url = base_url + zip_filename
+                checksum_url = full_url + ".CHECKSUM"
+                
+                success, file_hash = download_and_verify(full_url, checksum_url, zip_local, checksum_local)
+                
+                if success:
+                    manifest[zip_filename] = {
+                        "symbol": symbol,
+                        "type": dtype,
+                        "date": mes_str,
+                        "hash": file_hash,
+                        "downloaded_at": datetime.now().isoformat(),
+                        "status": "VERIFIED"
+                    }
+                    save_manifest(manifest)
+                    
+                    # 3. Descomprimir automáticamente para el Data Contract
+                    try:
+                        extract_zip(zip_local, symbol_dir)
+                    except Exception as e:
+                        print(f"  [!] Error extrayendo CSV de {zip_filename}: {e}")
+                else:
+                    print(f"  [!] No se encontró {zip_filename} en los servidores de Binance.")
 
 if __name__ == "__main__":
     main()

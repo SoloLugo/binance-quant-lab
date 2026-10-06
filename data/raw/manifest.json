@@ -510,5 +510,549 @@
         "hash": "468f78cf3a11df085e538ae44edfe73ad9bf69ba8ab7bed83788aad26ad538bb",
         "downloaded_at": "2026-09-23T18:40:28.165871",
         "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2024-01.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2024-01",
+        "hash": "3e0d30870672aa8f0f937881056e3cfd55913ae5c780cd50b33f2763aa0ba58e",
+        "downloaded_at": "2026-10-06T21:27:31.477267",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2024-02.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2024-02",
+        "hash": "daf1e4901e3d6436d82ad60f90d007eb5300be8047cfef121007203a7212cde6",
+        "downloaded_at": "2026-10-06T21:27:33.042508",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2024-03.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2024-03",
+        "hash": "711dcaf2a341aedfd06447b4117b540f60adb0784c5e64a313c718e4cf092bc3",
+        "downloaded_at": "2026-10-06T21:27:34.921426",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2024-04.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2024-04",
+        "hash": "6d220b8e2815362a11d294d35dbca28568370d8295351937eceec10f2b359b85",
+        "downloaded_at": "2026-10-06T21:27:37.124022",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2024-05.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2024-05",
+        "hash": "aef8c5fdce1493fd570b5829a72f2f17c7e459483390f25544d16c2a30be592e",
+        "downloaded_at": "2026-10-06T21:27:38.769696",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2024-06.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2024-06",
+        "hash": "43fc4473820d1fb4fe340d1b1951a87555f6841aa352e684fa95d6adffce04c6",
+        "downloaded_at": "2026-10-06T21:27:40.747605",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2024-07.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2024-07",
+        "hash": "acab0593c1452660ce74a6c239fb215c1192b0a9c6e8c1689e6495de40a0174b",
+        "downloaded_at": "2026-10-06T21:27:42.384981",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2024-08.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2024-08",
+        "hash": "7003d29a43dd5f9357f838da8766834954939e22c1d80af682d9f33984f67b71",
+        "downloaded_at": "2026-10-06T21:27:44.076246",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2024-09.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2024-09",
+        "hash": "6ef23b02392b481ef9c3855434bf3644289fb6e228b4f7d9a0dfc6d3cdff1116",
+        "downloaded_at": "2026-10-06T21:27:46.012599",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2024-10.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2024-10",
+        "hash": "26db65ac8020d80ece35df79c254c5f7e24427529bcceeb2972748c4fe2d2707",
+        "downloaded_at": "2026-10-06T21:27:48.126990",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2024-11.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2024-11",
+        "hash": "e1b19cccfe2cdcba48b022790789b7b01edd86c075f39bc152e44c267d43bd51",
+        "downloaded_at": "2026-10-06T21:27:49.816190",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2024-12.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2024-12",
+        "hash": "069409f525ebf6370ee1c7defe475167de4b97284c5ac8e68768652968cd3dc9",
+        "downloaded_at": "2026-10-06T21:27:51.814341",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2025-01.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2025-01",
+        "hash": "df725010d55458866eb5a47e9ee708c6796c9d7e77b14c38342cea11f381815e",
+        "downloaded_at": "2026-10-06T21:27:53.794762",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2025-02.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2025-02",
+        "hash": "e918b90fb33df3a3317feea13807a892047f1ec86eeac100bdb7b3dd83285d46",
+        "downloaded_at": "2026-10-06T21:27:55.492069",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2025-03.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2025-03",
+        "hash": "a3b95cfb315641fbfddc61eb32adf2a2588afb7a3973a61f464aca007ad43e3f",
+        "downloaded_at": "2026-10-06T21:27:57.170915",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2025-04.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2025-04",
+        "hash": "01dbb7bd0135f98bd63bdde6b943cde1accc1770cabf92f68a1ec0653ced3888",
+        "downloaded_at": "2026-10-06T21:27:59.077438",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2025-05.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2025-05",
+        "hash": "e7355e2775b88009c984db1783bb8ed6b5f24ede2b52bb764151b5722d6a5e42",
+        "downloaded_at": "2026-10-06T21:28:01.346305",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2025-06.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2025-06",
+        "hash": "a1f4a40953740fa83ee9ad97776ff8325d1958654a67f1325614071a983819d4",
+        "downloaded_at": "2026-10-06T21:28:03.300644",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2025-07.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2025-07",
+        "hash": "b097dff828f6e43fece23db0d3cb98042a9d7bc19693b8cbfd051d88eb973b7b",
+        "downloaded_at": "2026-10-06T21:28:04.992272",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2025-08.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2025-08",
+        "hash": "1180129860b6e196e8d70bb9719e81573aa6b4acb423ba5ee7f82f10c836f7ab",
+        "downloaded_at": "2026-10-06T21:28:06.703112",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2025-09.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2025-09",
+        "hash": "21dc6570fc6bffad0e7b5f9e99211b82ad07c95ab4f18c3a2daa3b95ec98344c",
+        "downloaded_at": "2026-10-06T21:28:08.687879",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2025-10.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2025-10",
+        "hash": "9ecdedab6344fc4cdb154763266b8e09627a71c3cc5574cf868158b541c259c2",
+        "downloaded_at": "2026-10-06T21:28:10.700008",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2025-11.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2025-11",
+        "hash": "23735400405627d610123e3a43db3e98ae7addb93459cd670e65a7659a5f081b",
+        "downloaded_at": "2026-10-06T21:28:12.364395",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2025-12.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2025-12",
+        "hash": "35318b789f020b0e04c9043112480743855554e52e1d188437cbdaa67246d51d",
+        "downloaded_at": "2026-10-06T21:28:14.025046",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2026-01.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2026-01",
+        "hash": "fcdc796484f395830d418588a34a26baed8849dbef0ff2b56173247e493ff51f",
+        "downloaded_at": "2026-10-06T21:28:15.915136",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2026-02.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2026-02",
+        "hash": "80df1dd669dc1e3afc360c9da8b9a949a127fce088eedbf5bf708bd37b0a1f58",
+        "downloaded_at": "2026-10-06T21:28:17.934892",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2026-03.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2026-03",
+        "hash": "5c069d5e9597a44fd0e213395082e59ff223fb99c9eab3a2a5a2a5622ba7867c",
+        "downloaded_at": "2026-10-06T21:28:19.600594",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2026-04.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2026-04",
+        "hash": "51cdeb4de7d5ef1d4eece80b6115e391bdf7a2d0803bf9ad8371ab23340b22d3",
+        "downloaded_at": "2026-10-06T21:28:21.840824",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2026-05.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2026-05",
+        "hash": "445b65fd6b17bfcfb5e4d035db29fad34f729fa078f0449024db42621be84e6e",
+        "downloaded_at": "2026-10-06T21:28:23.503706",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2026-06.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2026-06",
+        "hash": "cff97ce688329592bccbbf5873b5c7021649e093f5f5806e332c5b4fb7fd6a00",
+        "downloaded_at": "2026-10-06T21:28:25.193826",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2026-07.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2026-07",
+        "hash": "e36fcc66f493d7d9ec348c852fc22e9f318c79cf7adae17398a3994ae0adc41e",
+        "downloaded_at": "2026-10-06T21:28:26.905695",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2026-08.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2026-08",
+        "hash": "7c108b3a02bd6dc7345ca7323e3a49664edcea0afdcf780ffb3b44762c45a964",
+        "downloaded_at": "2026-10-06T21:28:28.561630",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-15m-2026-09.zip": {
+        "symbol": "BTCUSDT",
+        "type": "klines",
+        "date": "2026-09",
+        "hash": "e879fa6903fd905201bd1f59e456773638cdf8c13848da79331cee89b0046964",
+        "downloaded_at": "2026-10-06T21:28:30.928341",
+        "status": "VERIFIED"
+    },
+    "BTCUSDT-fundingRate-2026-09.zip": {
+        "symbol": "BTCUSDT",
+        "type": "fundingRate",
+        "date": "2026-09",
+        "hash": "913cd31b8f924a06717a2fac17f3df6132c24ccded209eb3e4ae7d83e1b247f2",
+        "downloaded_at": "2026-10-06T21:28:32.332761",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2024-01.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2024-01",
+        "hash": "5a71469b0b363886df904e784dddefc484dd943334b1fb7454713ce4ed715a4b",
+        "downloaded_at": "2026-10-06T21:28:34.009490",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2024-02.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2024-02",
+        "hash": "915fad950c48935f3875d88992b8d78290bc8a6fada44408e3ed14aef9a56670",
+        "downloaded_at": "2026-10-06T21:28:35.694504",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2024-03.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2024-03",
+        "hash": "e9c1d0f3e7e3b493277c7f826afb223482d56bdc7611144d398ac10e47307907",
+        "downloaded_at": "2026-10-06T21:28:37.454848",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2024-04.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2024-04",
+        "hash": "b54c9f05af116ccd921b32b25960ae26954c4983992d44f2390bf1de08b2c724",
+        "downloaded_at": "2026-10-06T21:28:39.719840",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2024-05.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2024-05",
+        "hash": "8350ab4d61b12ec61539611e30809039f54814213bc4c937609360b1ff28b5e0",
+        "downloaded_at": "2026-10-06T21:28:41.657044",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2024-06.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2024-06",
+        "hash": "def13f4a478c28b0111fb24c57f95fcee80e71982ed74f12e465d20d328e2275",
+        "downloaded_at": "2026-10-06T21:28:43.339170",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2024-07.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2024-07",
+        "hash": "9d236281ab6430250ad2b472cbbf03812a40aed42e73c8339fc6be55a2417a82",
+        "downloaded_at": "2026-10-06T21:28:45.084222",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2024-08.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2024-08",
+        "hash": "e17684bc761924eb5e1912c52cfa997eddeb99da303e68e28f6f37369f672b9d",
+        "downloaded_at": "2026-10-06T21:28:47.066604",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2024-09.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2024-09",
+        "hash": "ffb6e7441053137cb7ca81cc83bcdd996612f7dbb15aa2e168a7ee521f8cbbca",
+        "downloaded_at": "2026-10-06T21:28:48.736226",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2024-10.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2024-10",
+        "hash": "2124978c335473a5d9c0f0e9f238193d56c21ac7e250e065a36e9d1201beb049",
+        "downloaded_at": "2026-10-06T21:28:50.684254",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2024-11.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2024-11",
+        "hash": "636a4c7c86445c2774b4eae8598c480fcbc57de7dde5d40f6937c7fac510797c",
+        "downloaded_at": "2026-10-06T21:28:52.360025",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2024-12.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2024-12",
+        "hash": "11a0847e8aacb32eeb725611fda4fe6a8419c03eb0c16e14dfc3b9287e78ecc9",
+        "downloaded_at": "2026-10-06T21:28:54.651409",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2025-01.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2025-01",
+        "hash": "88c95b99d2784a7baac529fe578563d7e05038a1b8a498b2f59bf81b216fee20",
+        "downloaded_at": "2026-10-06T21:28:56.644490",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2025-02.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2025-02",
+        "hash": "9e116dd6754484a19ecc41ced40b8dfa7f62c33d41cdc3317336b1e1f043767f",
+        "downloaded_at": "2026-10-06T21:28:58.342318",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2025-03.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2025-03",
+        "hash": "62464a8bfb7ba515628acb76d3e2172d33b88805faa2e701a22537c51a17d139",
+        "downloaded_at": "2026-10-06T21:29:00.324074",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2025-04.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2025-04",
+        "hash": "7db62cb5e9f32397dacabb3d571b96397024bda3810bde0799c90f61cb773679",
+        "downloaded_at": "2026-10-06T21:29:02.030438",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2025-05.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2025-05",
+        "hash": "996aff38f046b50510301532ac5cbdca115afca971c49cb548f50e5d70e18d99",
+        "downloaded_at": "2026-10-06T21:29:04.011768",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2025-06.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2025-06",
+        "hash": "ae7ca242249ca3df06d1222a0c264fe83b18c4b2c19fe656e864f7d081d5e198",
+        "downloaded_at": "2026-10-06T21:29:06.213307",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2025-07.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2025-07",
+        "hash": "5f2d840c5669ca946529c33f6df32433c5d0cd973eb4adfd40459270c460e7f8",
+        "downloaded_at": "2026-10-06T21:29:07.895084",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2025-08.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2025-08",
+        "hash": "c3fca21c71afb4962e89f8e3d84afe5832019ed8f570ee7c7c299f2436a28b62",
+        "downloaded_at": "2026-10-06T21:29:09.517599",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2025-09.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2025-09",
+        "hash": "2fa09df245aadc73cf43f837a72c3009fcd7d10c8c4e3db48b2d1021c331841a",
+        "downloaded_at": "2026-10-06T21:29:11.139112",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2025-10.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2025-10",
+        "hash": "1ae86c5fb1f15d8792906b746cc7598ebe7e6e7194b74501db79c874e37d7e14",
+        "downloaded_at": "2026-10-06T21:29:12.754144",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2025-11.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2025-11",
+        "hash": "a3a8abb219373ec1e02e8d1a47015665d180d6130cfe1df71d2fa8fc9de59e59",
+        "downloaded_at": "2026-10-06T21:29:14.380228",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2025-12.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2025-12",
+        "hash": "ef9e84f53a5fa07702958c8700077c8be0a90ec8b3e25110f5611109c3c0090c",
+        "downloaded_at": "2026-10-06T21:29:16.466615",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2026-01.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2026-01",
+        "hash": "830cf7797ea6ecdc554ac2d9047a141df1a6a544f4ea58e7028227930462b139",
+        "downloaded_at": "2026-10-06T21:29:18.047514",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2026-02.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2026-02",
+        "hash": "e445f00c81a7fa8361d99b3660f24b4f58e5d952fe301d70bbc72c319bc01a77",
+        "downloaded_at": "2026-10-06T21:29:20.299289",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2026-03.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2026-03",
+        "hash": "9f5625846c503a1e94fcdecd2deb37dc8852e341add353fa48c2b9a0cc70df6a",
+        "downloaded_at": "2026-10-06T21:29:22.140640",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2026-04.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2026-04",
+        "hash": "86160f455478a8b262d96d1516f583355e6e0cec7beeb5784e69dda76f599e98",
+        "downloaded_at": "2026-10-06T21:29:23.732334",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2026-05.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2026-05",
+        "hash": "ff926ad3fc48493c26c85af16620b19c695cc1854faa1e7f0ea2ab9fdafc2084",
+        "downloaded_at": "2026-10-06T21:29:25.781183",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2026-06.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2026-06",
+        "hash": "cc6fb028a811bc423b711f6b89de067bf92a2eda61303e1ce0b219b5d3210e47",
+        "downloaded_at": "2026-10-06T21:29:27.720772",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2026-07.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2026-07",
+        "hash": "ece7f6c64d0e45fbd64929dec40bae525fe365381046e367de5ca0827bc623d3",
+        "downloaded_at": "2026-10-06T21:29:29.370562",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2026-08.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2026-08",
+        "hash": "8b843307038b3aedf725b1342003cce39f9526451ed92f407ca80bc637487839",
+        "downloaded_at": "2026-10-06T21:29:31.410247",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-15m-2026-09.zip": {
+        "symbol": "ETHUSDT",
+        "type": "klines",
+        "date": "2026-09",
+        "hash": "1dc572ea53979b37c55d950b2a8ad337eb3846cdcfd85864a609c70c526d934a",
+        "downloaded_at": "2026-10-06T21:29:33.400432",
+        "status": "VERIFIED"
+    },
+    "ETHUSDT-fundingRate-2026-09.zip": {
+        "symbol": "ETHUSDT",
+        "type": "fundingRate",
+        "date": "2026-09",
+        "hash": "d1916b9181cf3507ad5a6522ac6587cd84a424941f1a2132ab887f768b5dd4de",
+        "downloaded_at": "2026-10-06T21:29:34.854829",
+        "status": "VERIFIED"
     }
 }

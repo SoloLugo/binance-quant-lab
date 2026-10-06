@@ -24,6 +24,15 @@ El laboratorio está estructurado en módulos secuenciales independientes:
 5. **Entrenamiento y Modelado (outputs/models/):** El módulo `trainer.py` entrena un modelo base de Regresión Logística con regularización L2 y balanceo de clases, serializando los resultados y el escalador mediante `joblib`.
 6. **Calibrador y Análisis de Umbrales:** El script `calibrator.py` evalúa el rendimiento fuera de muestra simulando la rentabilidad teórica bajo diferentes niveles de exigencia de probabilidad (Thresholds).
 
+## Arquitectura del Modelo Cuantitativo
+
+Tras rigurosas pruebas de validación (Baseline vs Advanced), el laboratorio utiliza un modelo lineal para evitar el sobreajuste (overfitting) frente al ruido natural de los mercados financieros:
+
+- **Modelo Base:** Regresión Logística (Logistic Regression) con regularización L2.
+- **Calibración de Probabilidades:** Platt Scaling (Sigmoid) calibrado en un set de validación estrictamente aislado.
+- **Data Splitting:** Temporal split (60% Train / 20% Val / 20% Test) con purga de horizonte (`pd.Timedelta`) y test automatizado de fuga de datos.
+- **Trazabilidad:** Cada entrenamiento genera un `experiment_metadata.json` que registra el hash del commit, fechas exactas de entrenamiento y métricas Brier/ROC-AUC.
+
 ## Guia de Instalacion y Ejecucion (Desde Cero)
 
 Si clonas este repositorio en una nueva máquina (PC con Windows/Linux o placa de desarrollo), asegúrate de tener instalado Docker y Docker Compose. Luego, sigue estos pasos:

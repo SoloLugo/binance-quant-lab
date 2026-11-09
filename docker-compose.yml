@@ -1,5 +1,35 @@
 services:
-  quant-env:
+  # Servicio 1: Pipeline de descarga de datos y entrenamiento (Ablation Study)
+  # Se ejecuta bajo demanda cuando quieras actualizar datos y reentrenar el modelo.
+  trainer:
     build: .
+    container_name: bql_trainer
+    env_file:
+      - .env
     volumes:
-      - .:/app
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./src:/app/src
+    command: >
+      sh -c "python src/download_data.py && python src/train_ablation.py"
+    profiles:
+      - training
+
+  # Servicio 2: Bot en vivo operando 24/7 en Binance Futures Testnet
+  quant-bot:
+    build: .
+    container_name: bql_live_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./src:/app/src
+    # Límites saludables para la Orange Pi 4 Pro
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 2G
+    command: ["python", "src/live_testnet_bot.py"]

@@ -1,12 +1,12 @@
-# Ignorar bases de datos y archivos pesados
-data/raw/*.zip
-data/raw/*.CHECKSUM
-data/canonical/
-data/features/
-data/labels/
-outputs/
+cat << 'EOF' > .gitignore
+# Ignorar datos crudos y modelos entrenados
+data/
+models/
 
-# Archivos de Python y sistema
+# Ignorar credenciales y entornos virtuales
+.env
+.venv/
+venv/
 __pycache__/
 *.pyc
-.env
+EOF

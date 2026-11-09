@@ -18,3 +18,4 @@ python: can't open file '/app/src/execution/paper_bot.py': [Errno 2] No such fil
  Container binance-quant-lab-quant-env-run-804caa6a3ddd Created 
 python: can't open file '/app/src/execution/paper_bot.py': [Errno 2] No such file or directory
 
+no such service: quant-env

@@ -26,10 +26,10 @@ class BinanceFuturesTestnetBot:
         # Activamos el modo Sandbox (Apunta automáticamente a testnet.binancefuture.com)
         self.execution_client.set_sandbox_mode(True)
 
-    def fetch_live_dataframe(self, symbol: str, limit: int = 800) -> pd.DataFrame:
+    def fetch_live_dataframe(self, symbol: str, limit: int = 1500) -> pd.DataFrame:
         """
-        Descarga las últimas 800 velas de 15m desde el endpoint nativo de Binance Futures
-        incluyendo el volumen Taker Buy para el bloque Smart Money.
+        Descarga las últimas 1500 velas de 15m (~15.6 días) desde Binance Futures Mainnet
+        para que todas las ventanas rodantes (7d y 15d) del Context Engine estén completas.
         """
         raw_klines = self.market_data_client.fapiPublicGetKlines({
             "symbol": symbol.replace("/", ""),
@@ -49,7 +49,7 @@ class BinanceFuturesTestnetBot:
         for c in num_cols:
             df[c] = pd.to_numeric(df[c], errors="coerce")
             
-        # Descartamos la última vela en formación para usar solo velas cerradas
+        # Descartamos la última vela en formación para evaluar únicamente velas cerradas
         return df[num_cols].iloc[:-1]
 
     def fetch_live_funding(self, symbol: str = "BTCUSDT") -> pd.DataFrame:
@@ -63,15 +63,18 @@ class BinanceFuturesTestnetBot:
         df["funding_rate"] = pd.to_numeric(df["fundingRate"], errors="coerce")
         return df[["funding_rate"]]
 
-    def evaluate_and_execute(self, ev_threshold: float = 0.15):
+    def evaluate_and_execute(self, ev_threshold: float = 0.12):
         print("\n--- Evaluando Cierre de Vela 15m en Mercado Real ---")
-        df_btc = self.fetch_live_dataframe("BTCUSDT", limit=800)
-        df_eth = self.fetch_live_dataframe("ETHUSDT", limit=800)
+        df_btc = self.fetch_live_dataframe("BTCUSDT", limit=1500)
+        df_eth = self.fetch_live_dataframe("ETHUSDT", limit=1500)
         df_funding = self.fetch_live_funding("BTCUSDT")
 
         features = self.pipe.build_features(df_btc, df_eth, df_funding).dropna()
+        if features.empty:
+            raise RuntimeError("El DataFrame de features quedó vacío tras dropna(). Verifica las ventanas rodantes.")
+
         last_row = features.iloc[[-1]]
-        last_close = float(df_btc["close"].iloc[-1])
+        last_close = float(df_btc["close"].loc[last_row.index[0]])
         last_atr_pct = float(last_row["atr_pct"].iloc[0])
 
         # Inferencia en el Probability Engine y cálculo de EV
@@ -103,14 +106,12 @@ class BinanceFuturesTestnetBot:
         sl_distance_usdt = last_close * last_atr_pct * self.brain.sl_mult
         tp_distance_usdt = last_close * last_atr_pct * self.brain.tp_mult
         
-        # Cantidad de BTC a comprar para que si toca el SL solo perdamos `risk_usdt`
         qty_btc = round(max(risk_usdt / sl_distance_usdt, 0.002), 3)
         sl_price = round(last_close - sl_distance_usdt, 1)
         tp_price = round(last_close + tp_distance_usdt, 1)
 
         print(f"EJECUTANDO LONG EN TESTNET: {qty_btc} BTC | TP: {tp_price} | SL: {sl_price}")
         
-        # Orden de entrada a mercado + Barreras nativas en Binance Futures Testnet
         self.execution_client.create_order("BTC/USDT:USDT", "market", "buy", qty_btc)
         self.execution_client.create_order(
             "BTC/USDT:USDT", "STOP_MARKET", "sell", qty_btc, None, 
@@ -130,5 +131,4 @@ if __name__ == "__main__":
             bot.evaluate_and_execute(ev_threshold=0.12)
         except Exception as e:
             print(f"[ERROR EN CICLO]: {e}")
-        # Espera hasta el próximo bloque de 15 minutos
         time.sleep(900)

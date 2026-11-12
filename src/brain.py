@@ -2,7 +2,7 @@ from typing import Dict, List
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier
-from sklearn.calibration import CalibratedClassifierCV
+from sklearn.isotonic import IsotonicRegression
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
 
 
@@ -23,7 +23,7 @@ class BenterQuantBrain:
         self.sl_mult = sl_mult
         self.roundtrip_fee = roundtrip_fee
 
-        # Hiperparámetros regularizados para evitar sobreajuste
+        # Hiperparámetros regularizados para evitar sobreajuste en series ruidosas
         self.base_clf = LGBMClassifier(
             n_estimators=120,
             max_depth=4,
@@ -36,7 +36,9 @@ class BenterQuantBrain:
             verbose=-1,
             n_jobs=4
         )
-        self.calibrated_clf = None
+        # Calibrador isotónico monótono acotado estrictamente en [0, 1]
+        self.calibrator = IsotonicRegression(y_min=0.001, y_max=0.999, out_of_bounds="clip")
+        self.is_fitted = False
 
     def fit_and_calibrate(
         self, 
@@ -45,21 +47,35 @@ class BenterQuantBrain:
         df_calib: pd.DataFrame, 
         y_calib: pd.Series
     ) -> None:
+        """
+        Paso 1: Entrena LightGBM en el bloque histórico de entrenamiento (df_train).
+        Paso 2: Predice probabilidades crudas en el bloque futuro separado (df_calib)
+                y ajusta la curva de regresión isotónica para eliminar sesgos de escala.
+        """
         X_tr = df_train[self.feature_cols]
         X_ca = df_calib[self.feature_cols]
 
+        # 1. Entrenamiento del clasificador base
         self.base_clf.fit(X_tr, y_train)
-        # Calibración Sigmoid (Platt) o Isotonic para que P(TP before SL) sea probabilidad real
-        self.calibrated_clf = CalibratedClassifierCV(
-            estimator=self.base_clf, 
-            method="isotonic", 
-            cv="prefit"
-        )
-        self.calibrated_clf.fit(X_ca, y_calib)
+
+        # 2. Obtención de probabilidades sin calibrar en el conjunto de validación temporal
+        raw_calib_probs = self.base_clf.predict_proba(X_ca)[:, 1]
+
+        # 3. Ajuste del mapeo empírico de probabilidades reales P(TP before SL)
+        self.calibrator.fit(raw_calib_probs, y_calib.values)
+        self.is_fitted = True
 
     def predict_calibrated_proba(self, df_features: pd.DataFrame) -> np.ndarray:
+        """
+        Retorna la probabilidad calibrada real P(TP before SL) lista para entrar
+        en la ecuación de Valor Esperado de Bill Benter.
+        """
+        if not self.is_fitted:
+            raise RuntimeError("El modelo debe ser entrenado y calibrado antes de predecir.")
+            
         X = df_features[self.feature_cols]
-        return self.calibrated_clf.predict_proba(X)[:, 1]
+        raw_probs = self.base_clf.predict_proba(X)[:, 1]
+        return self.calibrator.predict(raw_probs)
 
     def compute_ev_and_kelly(
         self, 
@@ -74,7 +90,7 @@ class BenterQuantBrain:
         # Distancia porcentual de 1 unidad de riesgo (1R)
         r_dist_pct = np.maximum(atr_pct * self.sl_mult, 1e-4)
         
-        # Impacto de las comisiones expresado en unidades de R
+        # Impacto de las comisiones de apertura y cierre expresado en unidades de R
         fee_in_r = self.roundtrip_fee / r_dist_pct
 
         # Cuota neta de ganancia (b) y pérdida neta (l) en unidades R
@@ -99,7 +115,7 @@ class BenterQuantBrain:
         self, 
         df_test: pd.DataFrame, 
         y_test: pd.Series, 
-        ev_min_threshold: float = 0.15
+        ev_min_threshold: float = 0.10
     ) -> Dict[str, float]:
         p_win = self.predict_calibrated_proba(df_test)
         atr_pct = df_test["atr_pct"].values

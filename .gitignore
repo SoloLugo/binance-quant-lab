@@ -1,4 +1,3 @@
-cat << 'EOF' > .gitignore
 # Ignorar datos crudos y modelos entrenados
 data/
 models/
@@ -9,4 +8,4 @@ models/
 venv/
 __pycache__/
 *.pyc
-EOF
+*.log

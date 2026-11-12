@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List
 import numpy as np
 import pandas as pd
 
@@ -50,8 +50,8 @@ class QuantFeaturePipeline:
             (high - close.shift(1)).abs(),
             (low - close.shift(1)).abs()
         ], axis=1).max(axis=1)
-        atr_14 = tr.rolling(14).mean()
-        feat["atr_pct"] = atr_14 / close  # Guardamos para el cálculo de EV y barreras
+        atr_14 = tr.rolling(14, min_periods=14).mean()
+        feat["atr_pct"] = atr_14 / close
 
         # Retornos normalizados por volatilidad en múltiples horizontes
         feat["ta_ret_1"] = close.pct_change(1) / (feat["atr_pct"] + 1e-8)
@@ -66,19 +66,18 @@ class QuantFeaturePipeline:
 
         # RSI de 14 periodos
         delta = close.diff()
-        gain = delta.clip(lower=0).rolling(14).mean()
-        loss = (-delta.clip(upper=0)).rolling(14).mean()
+        gain = delta.clip(lower=0).rolling(14, min_periods=14).mean()
+        loss = (-delta.clip(upper=0)).rolling(14, min_periods=14).mean()
         rs = gain / (loss + 1e-8)
         feat["ta_rsi_14"] = 100.0 - (100.0 / (1.0 + rs))
 
         # Compresión de Bollinger (ancho de banda)
-        bb_std = close.rolling(20).std()
+        bb_std = close.rolling(20, min_periods=20).std()
         feat["ta_bb_width"] = (4.0 * bb_std) / ema_20
 
         # =========================================================
         # CAPA 2: SMART MONEY / ORDERFLOW (sm_*)
         # =========================================================
-        # En los CSVs de Binance, taker_buy_volume nos permite medir la agresión real a mercado
         vol = df["volume"].replace(0, np.nan)
         taker_buy = df["taker_buy_volume"]
         taker_sell = vol - taker_buy
@@ -86,14 +85,14 @@ class QuantFeaturePipeline:
         # Delta de volumen por vela (-1 = venta institucional agresiva, +1 = compra agresiva)
         order_flow_imbalance = (taker_buy - taker_sell) / (vol + 1e-8)
         feat["sm_ofi_1"] = order_flow_imbalance
-        feat["sm_ofi_cum_4"] = order_flow_imbalance.rolling(4).mean()
-        feat["sm_ofi_cum_16"] = order_flow_imbalance.rolling(16).mean()
+        feat["sm_ofi_cum_4"] = order_flow_imbalance.rolling(4, min_periods=1).mean()
+        feat["sm_ofi_cum_16"] = order_flow_imbalance.rolling(16, min_periods=4).mean()
 
         # Tamaño promedio por transacción (Detecta si operan ballenas o retail)
         avg_trade_size = df["quote_volume"] / (df["count"].replace(0, np.nan) + 1e-8)
         feat["sm_whale_trade_zscore"] = (
-            avg_trade_size - avg_trade_size.rolling(96).mean()
-        ) / (avg_trade_size.rolling(96).std() + 1e-8)
+            avg_trade_size - avg_trade_size.rolling(96, min_periods=24).mean()
+        ) / (avg_trade_size.rolling(96, min_periods=24).std() + 1e-8)
 
         # Absorción / Mechas (Rechazo de liquidez en máximos y mínimos)
         candle_range = (high - low) + 1e-8
@@ -104,37 +103,38 @@ class QuantFeaturePipeline:
         # CAPA 3: DERIVATIVES (deriv_*)
         # =========================================================
         if not df_funding.empty:
-            f_rate = df_funding["funding_rate"].reindex(feat.index, method="ffill").fillna(0.0)
+            # Usamos ffill y luego bfill por si la primera vela empieza unas horas antes del primer funding
+            f_rate = df_funding["funding_rate"].reindex(feat.index, method="ffill").bfill().fillna(0.0)
         else:
             f_rate = pd.Series(0.0, index=feat.index)
 
         feat["deriv_funding_rate"] = f_rate
-        # Z-Score de 7 días (96 velas * 7) para identificar posicionamiento saturado (crowded trades)
-        f_mean = f_rate.rolling(96 * 7).mean()
-        f_std = f_rate.rolling(96 * 7).std()
-        feat["deriv_funding_zscore"] = (f_rate - f_mean) / (f_std + 1e-8)
-        feat["deriv_funding_change_24h"] = f_rate - f_rate.shift(96)
+        # Z-Score de 7 días con min_periods=96 (1 día) para garantizar disponibilidad en inferencia live
+        f_mean = f_rate.rolling(96 * 7, min_periods=96).mean()
+        f_std = f_rate.rolling(96 * 7, min_periods=96).std()
+        feat["deriv_funding_zscore"] = ((f_rate - f_mean) / (f_std + 1e-8)).fillna(0.0)
+        feat["deriv_funding_change_24h"] = (f_rate - f_rate.shift(96)).fillna(0.0)
 
         # =========================================================
         # CAPA 4: CONTEXT ENGINE / MACRO / REGIME (ctx_*)
         # =========================================================
-        # 1. Régimen Macro de Tendencia en HTF (1D = 96 velas, 1W = 672 velas)
+        # 1. Régimen Macro de Tendencia en HTF (1D = 96 velas, 5D = 480 velas)
         ema_1d = close.ewm(span=96, adjust=False).mean()
         ema_5d = close.ewm(span=96 * 5, adjust=False).mean()
         feat["ctx_btc_htf_trend"] = (ema_1d - ema_5d) / (ema_5d + 1e-8)
         feat["ctx_btc_bull_regime"] = (ema_1d > ema_5d).astype(int)
 
-        # 2. Régimen de Volatilidad (Expansión vs Compresión en ventana de 15 días)
-        vol_24h = close.pct_change().rolling(96).std()
-        feat["ctx_vol_regime_pct"] = vol_24h.rolling(96 * 15).rank(pct=True)
+        # 2. Régimen de Volatilidad (min_periods=96 evita vaciar el dataframe cuando pedimos 1500 velas en vivo)
+        vol_24h = close.pct_change().rolling(96, min_periods=24).std()
+        feat["ctx_vol_regime_pct"] = vol_24h.rolling(96 * 15, min_periods=96).rank(pct=True)
 
         # 3. Flujo BTC -> ETH -> ALTs (Fuerza relativa y Correlación)
         if not df_eth.empty:
-            eth_close = df_eth["close"].reindex(feat.index, method="ffill")
+            eth_close = df_eth["close"].reindex(feat.index, method="ffill").bfill()
             eth_btc = eth_close / close
             feat["ctx_eth_btc_rel_24h"] = eth_btc.pct_change(96)
             feat["ctx_eth_btc_rel_7d"] = eth_btc.pct_change(96 * 7)
-            feat["ctx_btc_eth_corr_24h"] = close.pct_change().rolling(96).corr(eth_close.pct_change())
+            feat["ctx_btc_eth_corr_24h"] = close.pct_change().rolling(96, min_periods=24).corr(eth_close.pct_change())
         else:
             feat["ctx_eth_btc_rel_24h"] = 0.0
             feat["ctx_eth_btc_rel_7d"] = 0.0
@@ -152,9 +152,7 @@ class QuantFeaturePipeline:
 
     def create_triple_barrier_labels(self, df_btc: pd.DataFrame, atr_pct: pd.Series, direction: str = "LONG") -> pd.Series:
         """
-        Calcula la variable objetivo exacta de tu arquitectura: P(TP before SL).
-        Retorna 1 si el precio toca el Take Profit antes que el Stop Loss dentro de `horizon_bars`.
-        Retorna 0 si toca el Stop Loss primero o si expira el tiempo sin tocar el TP.
+        Calcula P(TP before SL) dentro de `horizon_bars`.
         """
         closes = df_btc["close"].values
         highs = df_btc["high"].values
@@ -174,7 +172,6 @@ class QuantFeaturePipeline:
                 sl_price = entry - (self.sl_mult * atrs[i])
 
                 for j in range(1, self.horizon_bars + 1):
-                    # Si en una misma vela toca ambos, asumimos conservadoramente que tocó SL primero
                     if lows[i + j] <= sl_price:
                         labels[i] = 0
                         break

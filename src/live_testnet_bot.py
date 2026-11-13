@@ -75,19 +75,44 @@ class BinanceFuturesTestnetBot:
                 "secret": api_secret,
                 "enableRateLimit": True,
                 "timeout": 15000,
-                "options": {"defaultType": "future"},
+                "options": {
+                    "defaultType": "future",
+                    "disableFuturesSandboxWarning": True,
+                    "fetchCurrencies": False,
+                },
             })
             if self.execution_mode == "testnet":
-                self.execution_client.set_sandbox_mode(True)
+                use_demo = os.getenv("USE_DEMO_TRADING", "false").lower() == "true"
+                if use_demo and hasattr(self.execution_client, "enable_demo_trading"):
+                    self.execution_client.enable_demo_trading(True)
+                else:
+                    self.execution_client.set_sandbox_mode(True)
+                    self.execution_client.options["disableFuturesSandboxWarning"] = True
             self._configure_exchange_account()
 
     def _configure_exchange_account(self) -> None:
         """
         Configura el apalancamiento máximo y el modo de margen en el exchange al iniciar.
+        En modo Testnet, soporta tanto claves clásicas de `testnet.binancefuture.com`
+        como claves del nuevo portal `demo.binance.com` (`enable_demo_trading`).
         """
         if self.execution_client is None:
             return
         try:
+            if self.execution_mode == "testnet":
+                try:
+                    self.execution_client.fetch_balance()
+                except Exception as auth_exc:
+                    # Si falla en testnet.binancefuture.com por clave de Demo Trading o deprecación,
+                    # conmutamos automáticamente a demo-fapi.binance.com (enable_demo_trading)
+                    if hasattr(self.execution_client, "enable_demo_trading"):
+                        print(
+                            f"[INFO] Conmutando cliente Testnet a Binance Demo Trading "
+                            f"(demo-fapi.binance.com) tras respuesta inicial: {auth_exc}"
+                        )
+                        self.execution_client.set_sandbox_mode(False)
+                        self.execution_client.enable_demo_trading(True)
+
             self.execution_client.load_markets()
             try:
                 self.execution_client.set_margin_mode(settings.margin_mode, settings.ccxt_symbol)

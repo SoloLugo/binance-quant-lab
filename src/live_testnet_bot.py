@@ -43,8 +43,10 @@ class BinanceFuturesTestnetBot:
 
         # Determinamos el modo de operación: 'paper', 'testnet' o 'mainnet'
         raw_mode = (execution_mode or settings.execution_mode).lower().strip()
-        api_key = settings.binance_api_key if raw_mode != "mainnet" else settings.mainnet_api_key
-        api_secret = settings.binance_secret if raw_mode != "mainnet" else settings.mainnet_secret
+        raw_key = settings.binance_api_key if raw_mode != "mainnet" else settings.mainnet_api_key
+        raw_secret = settings.binance_secret if raw_mode != "mainnet" else settings.mainnet_secret
+        api_key = (raw_key or "").strip().strip('"').strip("'")
+        api_secret = (raw_secret or "").strip().strip('"').strip("'")
 
         # Si se pide testnet/mainnet pero no se configuraron llaves API válidas, activamos 'paper' automáticamente
         if raw_mode in ("testnet", "mainnet") and (
@@ -79,6 +81,7 @@ class BinanceFuturesTestnetBot:
                     "defaultType": "future",
                     "disableFuturesSandboxWarning": True,
                     "fetchCurrencies": False,
+                    "recvWindow": 10000,
                 },
             })
             if self.execution_mode == "testnet":
@@ -93,8 +96,9 @@ class BinanceFuturesTestnetBot:
     def _configure_exchange_account(self) -> None:
         """
         Configura el apalancamiento máximo y el modo de margen en el exchange al iniciar.
-        En modo Testnet, soporta tanto claves clásicas de `testnet.binancefuture.com`
-        como claves del nuevo portal `demo.binance.com` (`enable_demo_trading`).
+        En modo Testnet, verifica las credenciales tanto en `testnet.binancefuture.com`
+        como en `demo-fapi.binance.com`. Si ambas rechazan la API Key (-2015), conmuta
+        automáticamente al Simulador en Tiempo Real ('paper') para operar sin interrupciones.
         """
         if self.execution_client is None:
             return
@@ -102,16 +106,35 @@ class BinanceFuturesTestnetBot:
             if self.execution_mode == "testnet":
                 try:
                     self.execution_client.fetch_balance()
-                except Exception as auth_exc:
-                    # Si falla en testnet.binancefuture.com por clave de Demo Trading o deprecación,
-                    # conmutamos automáticamente a demo-fapi.binance.com (enable_demo_trading)
+                except Exception as first_exc:
                     if hasattr(self.execution_client, "enable_demo_trading"):
+                        try:
+                            self.execution_client.set_sandbox_mode(False)
+                            self.execution_client.enable_demo_trading(True)
+                            self.execution_client.fetch_balance()
+                            print("[INFO] Conectado exitosamente a Binance Demo Trading (demo-fapi.binance.com).")
+                        except Exception as demo_exc:
+                            print(
+                                f"\n[AVISO DE CREDENCIALES] La API Key en .env fue rechazada tanto en "
+                                f"Futures Testnet como en Demo Trading ({demo_exc}).\n"
+                                f"Causas comunes del error -2015:\n"
+                                f"  1. La llave fue creada en Spot Testnet (testnet.binance.vision) o Mainnet en vez de "
+                                f"Futures Testnet (testnet.binancefuture.com) o Demo Trading (demo.binance.com).\n"
+                                f"  2. Falta activar el permiso 'Enable Futures' o la llave expiró.\n"
+                                f"-> Conmutando automáticamente a modo SIMULACIÓN EN TIEMPO REAL ('paper') "
+                                f"con $10,000 USDT virtuales y datos de mercado en vivo.\n"
+                            )
+                            self.execution_mode = "paper"
+                            self.execution_client = None
+                            return
+                    else:
                         print(
-                            f"[INFO] Conmutando cliente Testnet a Binance Demo Trading "
-                            f"(demo-fapi.binance.com) tras respuesta inicial: {auth_exc}"
+                            f"[AVISO] Credenciales Testnet rechazadas ({first_exc}). "
+                            f"Conmutando a modo Simulación en Tiempo Real ('paper')."
                         )
-                        self.execution_client.set_sandbox_mode(False)
-                        self.execution_client.enable_demo_trading(True)
+                        self.execution_mode = "paper"
+                        self.execution_client = None
+                        return
 
             self.execution_client.load_markets()
             try:

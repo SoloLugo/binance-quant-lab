@@ -10,12 +10,13 @@ services:
       - ./data:/app/data
       - ./models:/app/models
       - ./src:/app/src
+      - ./tests:/app/tests
     command: >
       sh -c "python src/download_data.py && python src/train_ablation.py"
     profiles:
       - training
 
-  # Servicio 2: Bot en vivo operando 24/7 en Binance Futures Testnet
+  # Servicio 2: Bot en vivo operando 24/7 en Binance Futures Testnet / Paper / Mainnet
   quant-bot:
     build: .
     container_name: bql_live_bot
@@ -26,6 +27,7 @@ services:
       - ./data:/app/data
       - ./models:/app/models
       - ./src:/app/src
+      - ./tests:/app/tests
     # Límites saludables para la Orange Pi 4 Pro
     deploy:
       resources:

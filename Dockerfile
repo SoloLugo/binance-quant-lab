@@ -18,8 +18,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copiamos el código fuente
+# Copiamos el código fuente y la suite de tests
 COPY src/ ./src/
+COPY tests/ ./tests/
 
 # Creamos los directorios para montar los volúmenes persistentes del NVMe
 RUN mkdir -p /app/data/raw /app/models

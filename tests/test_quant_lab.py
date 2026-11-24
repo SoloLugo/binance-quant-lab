@@ -131,13 +131,18 @@ def test_daily_circuit_breaker_halts_trading(tmp_path):
     assert sim.state["daily_halted"] is True
 
 
-def test_safe_position_sizing_and_emergency_sl_rollback(monkeypatch):
+def test_safe_position_sizing_and_emergency_sl_rollback(trained_model_artifact, tmp_path):
     """
     Verifica que:
       1. compute_safe_position_size respete el límite de riesgo y apalancamiento.
       2. Si falla STOP_MARKET tras abrir una orden a mercado en el exchange, se ejecute rollback inmediato.
     """
-    bot = BinanceFuturesTestnetBot(execution_mode="paper")
+    bot = BinanceFuturesTestnetBot(
+        model_path=trained_model_artifact,
+        execution_mode="paper",
+        sim_state_path=str(tmp_path / "sim_state.json"),
+        trade_log_path=str(tmp_path / "trades.csv"),
+    )
 
     # Con balance pequeño (100 USDT), un lote mínimo de 0.002 BTC (~140 USDT) con SL de 500 USDT
     # arriesgaría 1.0 USDT (1% de 100 USDT -> permitido), pero con balance de 20 USDT excedería el 3% de riesgo
@@ -161,11 +166,12 @@ def test_safe_position_sizing_and_emergency_sl_rollback(monkeypatch):
     mock_client = MagicMock()
     mock_client.create_order.side_effect = [
         {"id": "1", "average": 70000.0},  # Orden de entrada market exitosa
-         RuntimeError("Binance -2021 Order would immediately trigger"),  # Fallo en STOP_MARKET
+        RuntimeError("Binance -2021 Order would immediately trigger"),  # Fallo en STOP_MARKET
         {"id": "2", "status": "closed"},  # Orden de rollback reduceOnly market exitosa
     ]
     bot.execution_client = mock_client
     bot.execution_mode = "testnet"
+    bot.dry_run = False
 
     with pytest.raises(RuntimeError, match="Posición cerrada por seguridad"):
         bot._place_exchange_bracket_orders(side="LONG", qty_btc=0.01, atr_pct=0.005)

@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import requests
 from dotenv import load_dotenv
-from config import settings
+from config import settings, validate_execution_mode
 from simulator import RealTimeFuturesSimulator
 
 load_dotenv()
@@ -27,7 +27,16 @@ class BinanceFuturesTestnetBot:
         self,
         model_path: str = settings.model_artifact_path,
         execution_mode: Optional[str] = None,
+        sim_state_path: Optional[str] = None,
+        trade_log_path: Optional[str] = None,
+        fresh_sim_state: bool = False,
     ):
+        # Validamos el modo de operación ANTES de cualquier otra operación (bloqueo estricto de Mainnet)
+        raw_mode = validate_execution_mode(
+            execution_mode if execution_mode is not None else settings.execution_mode
+        )
+        self.dry_run: bool = settings.dry_run
+
         if not os.path.exists(model_path):
             raise FileNotFoundError(
                 f"No se encontró el modelo entrenado en '{model_path}'. "
@@ -41,15 +50,13 @@ class BinanceFuturesTestnetBot:
         self.pipe = bundle["pipeline"]
         self.model_name = bundle.get("best_model_name", "M4_Full_ContextEngine")
 
-        # Determinamos el modo de operación: 'paper', 'testnet' o 'mainnet'
-        raw_mode = (execution_mode or settings.execution_mode).lower().strip()
-        raw_key = settings.binance_api_key if raw_mode != "mainnet" else settings.mainnet_api_key
-        raw_secret = settings.binance_secret if raw_mode != "mainnet" else settings.mainnet_secret
+        raw_key = settings.binance_api_key
+        raw_secret = settings.binance_secret
         api_key = (raw_key or "").strip().strip('"').strip("'")
         api_secret = (raw_secret or "").strip().strip('"').strip("'")
 
-        # Si se pide testnet/mainnet pero no se configuraron llaves API válidas, activamos 'paper' automáticamente
-        if raw_mode in ("testnet", "mainnet") and (
+        # Si se pide testnet pero no se configuraron llaves API válidas, activamos 'paper' automáticamente
+        if raw_mode == "testnet" and (
             not api_key or not api_secret or "tu_api_key" in api_key
         ):
             print(
@@ -65,13 +72,17 @@ class BinanceFuturesTestnetBot:
         self._http = requests.Session()
 
         # 2. Motor de Simulación en Tiempo Real (siempre disponible para telemetría o modo paper)
-        self.simulator = RealTimeFuturesSimulator()
+        self.simulator = RealTimeFuturesSimulator(
+            state_path=sim_state_path or settings.sim_state_path,
+            trade_log_path=trade_log_path or settings.trade_log_path,
+            fresh_state=fresh_sim_state,
+        )
 
-        # 3. Cliente Privado de Ejecución (Testnet o Mainnet)
+        # 3. Cliente Privado de Ejecución (solo Testnet permitido)
         self.execution_client: Optional[ccxt.binanceusdm] = None
         self.active_exchange_entry_ts: Optional[float] = None
 
-        if self.execution_mode in ("testnet", "mainnet"):
+        if self.execution_mode == "testnet":
             self.execution_client = ccxt.binanceusdm({
                 "apiKey": api_key,
                 "secret": api_secret,
@@ -433,6 +444,13 @@ class BinanceFuturesTestnetBot:
         Si la colocación del Stop Loss falla, cierra inmediatamente la posición a mercado (rollback)
         para jamás dejar una posición apalancada desprotegida.
         """
+        if self.dry_run and self.execution_mode == "testnet":
+            print(
+                f"[DRY_RUN] Envío de órdenes bloqueado en TESTNET: "
+                f"{side.upper()} {qty_btc} BTC (atr_pct={atr_pct:.5f})."
+            )
+            return
+
         assert self.execution_client is not None
         side_upper = side.upper()
         entry_order_side = "buy" if side_upper == "LONG" else "sell"
@@ -863,9 +881,9 @@ def main():
     parser = argparse.ArgumentParser(description="Binance Quant Lab - Real-Time Simulator & Execution Bot")
     parser.add_argument(
         "--mode",
-        choices=["paper", "testnet", "mainnet"],
+        choices=["paper", "testnet"],
         default=None,
-        help="Modo de ejecución: paper (simulación real-time), testnet o mainnet.",
+        help="Modo de ejecución: paper (simulación real-time) o testnet.",
     )
     parser.add_argument(
         "--ev-threshold",

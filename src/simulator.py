@@ -23,19 +23,21 @@ class RealTimeFuturesSimulator:
         state_path: str = settings.sim_state_path,
         trade_log_path: str = settings.trade_log_path,
         initial_balance: float = settings.initial_paper_balance,
+        fresh_state: bool = False,
     ):
         self.state_path = state_path
         self.trade_log_path = trade_log_path
         self.initial_balance = initial_balance
+        self.fresh_state = fresh_state
         self.taker_fee_rate = settings.roundtrip_fee / 2.0  # 0.05% por lado (0.0005)
         self.slippage_rate = settings.slippage_bps / 10000.0  # 1.5 bps = 0.00015
-        self.state = self._load_or_init_state()
+        self.state = self._load_or_init_state(fresh_state=fresh_state)
 
-    def _load_or_init_state(self) -> Dict[str, Any]:
+    def _load_or_init_state(self, fresh_state: bool = False) -> Dict[str, Any]:
         os.makedirs(os.path.dirname(self.state_path) or "data", exist_ok=True)
         os.makedirs(os.path.dirname(self.trade_log_path) or "data", exist_ok=True)
 
-        if os.path.exists(self.state_path):
+        if not fresh_state and os.path.exists(self.state_path):
             try:
                 with open(self.state_path, "r", encoding="utf-8") as f:
                     return json.load(f)

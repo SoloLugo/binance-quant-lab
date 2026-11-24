@@ -30,12 +30,15 @@ class BinanceFuturesTestnetBot:
         sim_state_path: Optional[str] = None,
         trade_log_path: Optional[str] = None,
         fresh_sim_state: bool = False,
+        strict_futures_data: bool = True,
     ):
         # Validamos el modo de operación ANTES de cualquier otra operación (bloqueo estricto de Mainnet)
         raw_mode = validate_execution_mode(
             execution_mode if execution_mode is not None else settings.execution_mode
         )
         self.dry_run: bool = settings.dry_run
+        self.strict_futures_data: bool = strict_futures_data
+        self.last_data_source: Optional[str] = None
 
         if not os.path.exists(model_path):
             raise FileNotFoundError(
@@ -197,6 +200,8 @@ class BinanceFuturesTestnetBot:
                 "interval": settings.timeframe,
                 "limit": min(limit, 1500),
             })
+            if raw_klines:
+                self.last_data_source = "fapi_mainnet"
         except Exception:
             raw_klines = None
 
@@ -228,6 +233,8 @@ class BinanceFuturesTestnetBot:
                     raw_klines = batch_1.json() + k_recent
                 else:
                     raw_klines = k_recent
+                if raw_klines:
+                    self.last_data_source = "vision_spot_degraded"
             except Exception:
                 raw_klines = None
 
@@ -240,6 +247,7 @@ class BinanceFuturesTestnetBot:
             )
             resp.raise_for_status()
             raw_klines = resp.json()
+            self.last_data_source = "testnet_degraded"
 
         df = self._parse_raw_klines(raw_klines)
         if include_forming_bar:
@@ -400,8 +408,14 @@ class BinanceFuturesTestnetBot:
             try:
                 open_orders = self.execution_client.fetch_open_orders(settings.ccxt_symbol)
                 if open_orders:
-                    self.execution_client.cancel_all_orders(settings.ccxt_symbol)
-                    print(f"[RECONCILIACIÓN] Canceladas {len(open_orders)} órdenes condicionales huérfanas.")
+                    if self.dry_run:
+                        print(
+                            f"[DRY_RUN] [RECONCILIACIÓN] {len(open_orders)} órdenes abiertas detectadas; "
+                            f"cancelación bloqueada por DRY_RUN=true."
+                        )
+                    else:
+                        self.execution_client.cancel_all_orders(settings.ccxt_symbol)
+                        print(f"[RECONCILIACIÓN] Canceladas {len(open_orders)} órdenes condicionales huérfanas.")
             except Exception as exc:
                 print(f"[WARN] No se pudieron limpiar órdenes abiertas: {exc}")
             return 0
@@ -419,6 +433,12 @@ class BinanceFuturesTestnetBot:
         horizon_secs = settings.horizon_bars * 15 * 60
         if (now_ts - self.active_exchange_entry_ts) >= horizon_secs:
             close_side = "sell" if side_str == "LONG" else "buy"
+            if self.dry_run:
+                print(
+                    f"[DRY_RUN] [TIME-STOP] Barrera vertical de {settings.horizon_bars} velas alcanzada "
+                    f"({side_str} {contracts} BTC); cierre bloqueado por DRY_RUN=true."
+                )
+                return 1
             print(f"[TIME-STOP] Barrera vertical de {settings.horizon_bars} velas alcanzada. Cerrando a mercado...")
             try:
                 self.execution_client.cancel_all_orders(settings.ccxt_symbol)
@@ -561,7 +581,28 @@ class BinanceFuturesTestnetBot:
         self.monitor_realtime_positions()
 
         df_btc = self.fetch_live_dataframe(settings.primary_symbol, limit=1500)
+        btc_data_source = self.last_data_source
         df_eth = self.fetch_live_dataframe(settings.context_symbol, limit=1500)
+        eth_data_source = self.last_data_source
+
+        if self.strict_futures_data and (
+            btc_data_source != "fapi_mainnet" or eth_data_source != "fapi_mainnet"
+        ):
+            degraded_source = (
+                btc_data_source if btc_data_source != "fapi_mainnet" else eth_data_source
+            )
+            self.last_data_source = degraded_source
+            print(
+                f"[DATA_SOURCE_DEGRADED] Fuente de mercado degradada "
+                f"(BTC={btc_data_source}, ETH={eth_data_source}). Operación pausada."
+            )
+            return {
+                "action": "DATA_SOURCE_DEGRADED",
+                "data_source": degraded_source,
+                "btc_data_source": btc_data_source,
+                "eth_data_source": eth_data_source,
+            }
+
         df_funding = self.fetch_live_funding(settings.primary_symbol)
         snap = self.fetch_live_market_snapshot(settings.primary_symbol)
 
@@ -607,7 +648,7 @@ class BinanceFuturesTestnetBot:
         if settings.enable_shorts and self.brain_short is not None:
             print(
                 f"Señal SHORT    : P(TP)={p_short_val*100:.2f}% | "
-                f"b_net={ev_long_df['b_net_odds']:.2f}R | EV={ev_short_val:+.3f}R"
+                f"b_net={ev_short_df['b_net_odds']:.2f}R | EV={ev_short_val:+.3f}R"
             )
 
         summary = {
@@ -774,6 +815,7 @@ class BinanceFuturesTestnetBot:
             ask_p = round(close_p + half_spread, 2)
 
             # 1. Si hay posición abierta, verificamos si la vela actual tocó SL, TP, Funding o Time-Stop
+            closed_this_bar = False
             if self.simulator.has_open_position():
                 closed = self.simulator.update_on_market_tick(
                     mark_price=close_p,
@@ -784,6 +826,7 @@ class BinanceFuturesTestnetBot:
                     candle_low=low_p,
                     now_utc=bar_dt,
                 )
+                closed_this_bar = closed is not None
                 if closed is not None:
                     print(
                         f"[{bar_ts}] Cierre #{closed['trade_id']} ({closed['side']}) por {closed['exit_reason']:12s} | "
@@ -792,8 +835,8 @@ class BinanceFuturesTestnetBot:
                         f"Equity: {closed['balance_after_usdt']:.2f}"
                     )
 
-            # 2. Si estamos planos y no bloqueados por circuit breaker, evaluamos nueva entrada al cierre de la vela
-            if not self.simulator.has_open_position() and not self.simulator.check_daily_circuit_breaker(bar_dt):
+            # 2. Si estamos planos, no cerramos en esta misma vela y no bloqueados por circuit breaker, evaluamos nueva entrada
+            if not closed_this_bar and not self.simulator.has_open_position() and not self.simulator.check_daily_circuit_breaker(bar_dt):
                 ev_l = ev_long_all.loc[bar_ts]
                 best_side = "LONG"
                 best_ev = ev_l

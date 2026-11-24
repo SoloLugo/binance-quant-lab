@@ -2,31 +2,39 @@ from typing import Dict, List
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier
-from sklearn.isotonic import IsotonicRegression
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
+
+from calibration_engine import PROB_EPS, ProbabilityCalibrator
 from config import settings
+from splits import verify_no_temporal_overlap
 
 
 class BenterQuantBrain:
     """
-    Motor de Probabilidad, Calibración Isotónica Regularizada en Cola,
-    Valor Esperado (EV) y Dimensionamiento de Riesgo (Criterio de Kelly Fraccionado).
+    Adaptador compatible de Probabilidad, Calibración (delegada a `ProbabilityCalibrator`
+    sin techo duro arbitrario de 0.75), Valor Esperado (EV) y Dimensionamiento de Riesgo
+    (Criterio de Kelly Fraccionado).
     """
+
     def __init__(
         self,
         feature_cols: List[str],
         tp_mult: float = settings.tp_multiple,
         sl_mult: float = settings.sl_multiple,
         roundtrip_fee: float = settings.roundtrip_fee,
-        direction: str = "LONG"
+        direction: str = "LONG",
+        calibration_method: str = "isotonic",
+        random_state: int = settings.random_seed,
     ):
-        self.feature_cols = feature_cols
+        self.feature_cols = list(feature_cols)
         self.tp_mult = tp_mult
         self.sl_mult = sl_mult
         self.roundtrip_fee = roundtrip_fee
         self.direction = direction.upper()
+        self.calibration_method = calibration_method
+        self.random_state = int(random_state)
 
-        # Hiperparámetros regularizados para evitar sobreajuste en series ruidosas
+        # Hiperparámetros regularizados y estrictamente deterministas
         self.base_clf = LGBMClassifier(
             n_estimators=120,
             max_depth=4,
@@ -35,13 +43,17 @@ class BenterQuantBrain:
             min_child_samples=100,
             subsample=0.8,
             colsample_bytree=0.8,
-            random_state=42,
+            random_state=self.random_state,
+            deterministic=True,
+            force_col_wise=True,
             verbose=-1,
-            n_jobs=settings.n_jobs
+            n_jobs=1,
         )
-        # Calibrador isotónico monótono acotado en [0.01, 0.75] para evitar probabilidades irreales (0.999)
-        self.calibrator = IsotonicRegression(y_min=0.01, y_max=0.75, out_of_bounds="clip")
-        self.raw_upper_cap: float = 1.0
+        # Calibración delegada a ProbabilityCalibrator (sin techo arbitrario 0.75 ni cap [-4])
+        self.calibrator = ProbabilityCalibrator(
+            method=self.calibration_method,
+            random_state=self.random_state,
+        )
         self.is_fitted = False
 
     def fit_and_calibrate(
@@ -50,30 +62,48 @@ class BenterQuantBrain:
         y_train: pd.Series,
         df_calib: pd.DataFrame,
         y_calib: pd.Series,
-        purge_bars: int = 24
+        purge_bars: int = 24,
+        enforce_purge: bool = False,
+        bar_delta: pd.Timedelta = pd.Timedelta(minutes=15),
     ) -> None:
         """
-        Paso 1: Entrena LightGBM en el bloque histórico de entrenamiento (df_train).
-        Paso 2: Predice probabilidades crudas en el bloque futuro separado (df_calib)
-                con Winsorización de cola superior (mínimo 4 muestras) para evitar que
-                un único outlier en validación genere un escalón artificial de p=0.999.
+        Paso 1: Valida separación temporal estricta entre `df_train` y `df_calib`.
+                Si ambos índices son `DatetimeIndex`, exige `df_calib.index.min() > df_train.index.max()`.
+                Si `enforce_purge=True`, exige además una brecha >= `purge_bars * bar_delta`.
+        Paso 2: Entrena LightGBM determinista en `df_train`.
+        Paso 3: Ajusta `ProbabilityCalibrator` exclusivamente sobre `(raw_calib_probs, y_calib)`.
         """
+        if isinstance(df_train.index, pd.DatetimeIndex) and isinstance(
+            df_calib.index, pd.DatetimeIndex
+        ):
+            if df_train.empty or df_calib.empty:
+                raise ValueError("df_train y df_calib no pueden estar vacíos.")
+            if df_calib.index.min() <= df_train.index.max():
+                raise ValueError(
+                    "Solapamiento temporal detectado entre df_train y df_calib: "
+                    f"df_calib.index.min() ({df_calib.index.min()}) <= "
+                    f"df_train.index.max() ({df_train.index.max()})."
+                )
+            if enforce_purge:
+                verify_no_temporal_overlap(
+                    df_train.index,
+                    df_calib.index,
+                    purge_bars=purge_bars,
+                    embargo_bars=0,
+                    bar_delta=bar_delta,
+                )
+
         X_tr = df_train[self.feature_cols]
         X_ca = df_calib[self.feature_cols]
 
         # 1. Entrenamiento del clasificador base
         self.base_clf.fit(X_tr, y_train.astype(int))
 
-        # 2. Obtención de probabilidades sin calibrar en el conjunto de validación temporal
+        # 2. Probabilidades crudas en el conjunto de calibración temporalmente posterior
         raw_calib_probs = self.base_clf.predict_proba(X_ca)[:, 1]
-        if len(raw_calib_probs) >= 10:
-            self.raw_upper_cap = float(np.sort(raw_calib_probs)[-4])
-        else:
-            self.raw_upper_cap = 1.0
 
-        # 3. Ajuste del mapeo empírico de probabilidades reales P(TP before SL)
-        clipped_calib = np.minimum(raw_calib_probs, self.raw_upper_cap)
-        self.calibrator.fit(clipped_calib, y_calib.values.astype(float))
+        # 3. Ajuste del calibrador sin techo duro arbitrario 0.75 ni winsorización [-4]
+        self.calibrator.fit(raw_calib_probs, y_calib.to_numpy(dtype=float))
         self.is_fitted = True
 
     def predict_calibrated_proba(self, df_features: pd.DataFrame) -> np.ndarray:
@@ -86,8 +116,7 @@ class BenterQuantBrain:
 
         X = df_features[self.feature_cols]
         raw_probs = self.base_clf.predict_proba(X)[:, 1]
-        cap = getattr(self, "raw_upper_cap", 1.0)
-        return self.calibrator.predict(np.minimum(raw_probs, cap))
+        return self.calibrator.predict(raw_probs)
 
     def compute_ev_and_kelly(
         self,
@@ -178,9 +207,15 @@ class BenterQuantBrain:
         else:
             avg_realized_r, cum_r, win_rate, avg_ev_pred = 0.0, 0.0, 0.0, 0.0
 
+        p_clip = np.clip(p_win, PROB_EPS, 1.0 - PROB_EPS)
+        auc_val = (
+            float(roc_auc_score(y_test, p_win))
+            if len(np.unique(y_vals)) >= 2
+            else float("nan")
+        )
         return {
-            "AUC": round(float(roc_auc_score(y_test, p_win)), 4),
-            "LogLoss": round(float(log_loss(y_test, p_win)), 4),
+            "AUC": round(auc_val, 4) if not np.isnan(auc_val) else float("nan"),
+            "LogLoss": round(float(log_loss(y_test, p_clip, labels=[0, 1])), 4),
             "Brier": round(float(brier_score_loss(y_test, p_win)), 4),
             "Trades": n_trades,
             "WinRate_Taken": round(win_rate * 100, 2),

@@ -189,6 +189,10 @@ class TemporalDatasetPartitioner:
     def sealed_test_size(self) -> int:
         return len(self._sealed_test_df)
 
+    @property
+    def sealed_test_access_log(self) -> List[str]:
+        return list(self._sealed_access_log)
+
     def get_sealed_test(
         self,
         unlock_sealed_test: bool = False,

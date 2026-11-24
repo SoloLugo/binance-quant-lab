@@ -1,151 +1,249 @@
+"""
+Script de entrenamiento y ablación progresiva M0–M4 (Fases 9, 10 y 11).
+
+Elimina definitivamente el bug histórico AUD-03:
+- Valida la calidad de datos con `DataQualityGate` antes de entrenar.
+- Aísla el Test Final Sellado mediante `TemporalDatasetPartitioner`.
+- Selecciona el mejor modelo de forma independiente para LONG y SHORT
+  EXCLUSIVAMENTE sobre Walk-Forward Validation (`run_ablation_study`).
+- Registra todos los experimentos en `ExperimentTracker` con `test_period="SEALED_NOT_TOUCHED"`.
+- JAMÁS accede al Test Final Sellado (`get_sealed_test` no se invoca nunca).
+"""
+from __future__ import annotations
+
 import os
+from typing import Any, Dict, List
+
 import joblib
 import pandas as pd
-from config import settings
-from data_loader import HistoricalDataLoader
-from pipeline import QuantFeaturePipeline
+
+from ablation import run_ablation_study
 from brain import BenterQuantBrain
+from config import settings
+from contracts import CostModel
+from data_loader import HistoricalDataLoader
+from data_quality import DataQualityGate, timeframe_to_timedelta
+from experiment_tracker import ExperimentTracker
+from pipeline import QuantFeaturePipeline
+from splits import TemporalDatasetPartitioner
 
 
-def _split_with_purge(dataset: pd.DataFrame, purge_bars: int = 24):
+def _fit_export_brain(
+    features: pd.DataFrame,
+    outcomes: pd.DataFrame,
+    partitioner: TemporalDatasetPartitioner,
+    feature_cols: List[str],
+    direction: str,
+    calibration_method: str = "isotonic",
+) -> BenterQuantBrain:
     """
-    División temporal estricta con ventana de purga (embargo = horizon_bars)
-    entre Entrenamiento (70%), Calibración (15%) y Test Fuera de Muestra (15%)
-    para eliminar por completo el solapamiento de etiquetas Triple-Barrier.
+    Ajusta el adaptador `BenterQuantBrain` exclusivamente sobre el bloque de desarrollo
+    `(df_train, df_calib)` purgado y con embargo, sin tocar jamás el Test Final Sellado.
     """
-    n = len(dataset)
-    i_train = int(n * 0.70)
-    i_calib = int(n * 0.85)
+    df_tr_part, df_ca_part, _ = partitioner.get_dev_split()
 
-    df_train = dataset.iloc[:i_train]
-    y_train = df_train["target"].astype(int)
+    X_tr_raw = features.reindex(df_tr_part.index)
+    y_tr_raw = outcomes.reindex(df_tr_part.index)["target_tp_before_sl"]
+    tr_mask = X_tr_raw[feature_cols].notna().all(axis=1) & y_tr_raw.notna()
 
-    calib_start = min(i_train + purge_bars, i_calib)
-    df_calib = dataset.iloc[calib_start:i_calib]
-    y_calib = df_calib["target"].astype(int)
+    X_ca_raw = features.reindex(df_ca_part.index)
+    y_ca_raw = outcomes.reindex(df_ca_part.index)["target_tp_before_sl"]
+    ca_mask = X_ca_raw[feature_cols].notna().all(axis=1) & y_ca_raw.notna()
 
-    test_start = min(i_calib + purge_bars, n)
-    df_test = dataset.iloc[test_start:]
-    y_test = df_test["target"].astype(int)
+    brain = BenterQuantBrain(
+        feature_cols=feature_cols,
+        tp_mult=settings.tp_multiple,
+        sl_mult=settings.sl_multiple,
+        roundtrip_fee=settings.roundtrip_fee,
+        direction=direction,
+        calibration_method=calibration_method,
+        random_state=settings.random_seed,
+    )
+    brain.fit_and_calibrate(
+        df_train=X_tr_raw.loc[tr_mask],
+        y_train=y_tr_raw.loc[tr_mask].astype(int),
+        df_calib=X_ca_raw.loc[ca_mask],
+        y_calib=y_ca_raw.loc[ca_mask].astype(int),
+        purge_bars=settings.horizon_bars,
+        enforce_purge=True,
+        bar_delta=timeframe_to_timedelta(settings.timeframe),
+    )
+    return brain
 
-    return df_train, y_train, df_calib, y_calib, df_test, y_test
 
-
-def run_ablation_and_export():
-    print("[1/4] Cargando datos históricos de BTCUSDT, ETHUSDT y Funding Rate...")
+def run_ablation_and_export(
+    n_splits: int = 3,
+    model_name: str = "lightgbm",
+    calibration_method: str = "isotonic",
+) -> Dict[str, Any]:
+    """
+    Ejecuta el flujo completo de ablación M0–M4 sobre Walk-Forward Validation
+    para LONG y SHORT, registra resultados en `ExperimentTracker` y exporta
+    el artefacto compatible sin tocar nunca el Test Final Sellado.
+    """
+    print("[1/5] Cargando y validando datos históricos con DataQualityGate...")
     loader = HistoricalDataLoader(raw_dir=settings.raw_data_dir)
     df_btc = loader.load_klines(settings.primary_symbol, settings.timeframe)
     df_eth = loader.load_klines(settings.context_symbol, settings.timeframe)
     df_funding = loader.load_funding_rate(settings.primary_symbol)
 
-    print("[2/4] Ejecutando Context Engine, Feature Engine y Triple-Barrier Labeling...")
+    gate = DataQualityGate()
+    btc_report = gate.validate_klines(
+        df_btc, symbol=settings.primary_symbol, timeframe=settings.timeframe
+    )
+    if not btc_report.passed:
+        raise ValueError(
+            f"DataQualityGate bloqueó {settings.primary_symbol}: {btc_report.errors}"
+        )
+
+    eth_report = gate.validate_klines(
+        df_eth, symbol=settings.context_symbol, timeframe=settings.timeframe
+    )
+    if not eth_report.passed:
+        raise ValueError(
+            f"DataQualityGate bloqueó {settings.context_symbol}: {eth_report.errors}"
+        )
+
+    print("[2/5] Construyendo features causales y etiquetas Triple-Barrier...")
     pipe = QuantFeaturePipeline(
         tp_mult=settings.tp_multiple,
         sl_mult=settings.sl_multiple,
-        horizon_bars=settings.horizon_bars
+        horizon_bars=settings.horizon_bars,
     )
     features = pipe.build_features(df_btc, df_eth, df_funding)
-    outcomes_long = pipe.compute_triple_barrier_outcomes(df_btc, features["atr_pct"], direction="LONG")
-    outcomes_short = pipe.compute_triple_barrier_outcomes(df_btc, features["atr_pct"], direction="SHORT")
-
-    dataset_long = features.copy()
-    dataset_long["target"] = outcomes_long["target_tp_before_sl"]
-    dataset_long["realized_r_gross"] = outcomes_long["realized_r_gross"]
-    dataset_long["exit_bars"] = outcomes_long["exit_bars"]
-    dataset_long = dataset_long.dropna()
-
-    df_train, y_train, df_calib, y_calib, df_test, y_test = _split_with_purge(
-        dataset_long, purge_bars=settings.horizon_bars
+    outcomes_long = pipe.compute_triple_barrier_outcomes(
+        df_btc, features["atr_pct"], direction="LONG"
+    )
+    outcomes_short = pipe.compute_triple_barrier_outcomes(
+        df_btc, features["atr_pct"], direction="SHORT"
     )
 
-    # Separación de columnas por capa arquitectónica
-    ta_cols = [c for c in features.columns if c.startswith("ta_")]
-    sm_cols = [c for c in features.columns if c.startswith("sm_")]
-    deriv_cols = [c for c in features.columns if c.startswith("deriv_")]
-    ctx_cols = [c for c in features.columns if c.startswith("ctx_")]
-
-    models_config = {
-        "M1_Technical": ta_cols,
-        "M2_TA+SmartMoney": ta_cols + sm_cols,
-        "M3_TA+SM+Derivatives": ta_cols + sm_cols + deriv_cols,
-        "M4_Full_ContextEngine": ta_cols + sm_cols + deriv_cols + ctx_cols,
-    }
-
-    print("\n[3/4] Entrenando, Calibrando y Evaluando Modelos Fuera de Muestra (Secuencial Sin Solapamiento)...")
-    results = {}
-    trained_brains = {}
-
-    for name, cols in models_config.items():
-        brain = BenterQuantBrain(
-            feature_cols=cols,
-            tp_mult=settings.tp_multiple,
-            sl_mult=settings.sl_multiple,
-            roundtrip_fee=settings.roundtrip_fee,
-            direction="LONG"
-        )
-        brain.fit_and_calibrate(df_train, y_train, df_calib, y_calib, purge_bars=settings.horizon_bars)
-        metrics = brain.evaluate_model(df_test, y_test, ev_min_threshold=0.10, non_overlapping=True)
-        results[name] = metrics
-        trained_brains[name] = brain
-
-    results_df = pd.DataFrame(results).T
-    print("\n================ RESULTADOS OUT-OF-SAMPLE LONG (BILL BENTER ABLATION) ================")
-    print(results_df.to_string())
-    print("======================================================================================\n")
-
-    # Selección dinámica del mejor modelo (prioriza modelos con >=5 trades, mayor Total_Net_R y menor Brier)
-    eligible = [
-        name for name, m in results.items()
-        if m["Trades"] >= 5 and m["Total_Net_R"] > 0
-    ]
-    if eligible:
-        best_model_name = max(
-            eligible,
-            key=lambda k: (-results[k]["Brier"], results[k]["AUC"], results[k]["Total_Net_R"])
-        )
-    else:
-        best_model_name = max(results.keys(), key=lambda k: (results[k]["AUC"], -results[k]["Brier"]))
-
-    best_brain_long = trained_brains[best_model_name]
-
-    # Entrenamos también el motor gemelo para dirección SHORT con las mismas features del mejor modelo
-    dataset_short = features.copy()
-    dataset_short["target"] = outcomes_short["target_tp_before_sl"]
-    dataset_short["realized_r_gross"] = outcomes_short["realized_r_gross"]
-    dataset_short["exit_bars"] = outcomes_short["exit_bars"]
-    dataset_short = dataset_short.dropna()
-
-    df_tr_s, y_tr_s, df_ca_s, y_ca_s, df_te_s, y_te_s = _split_with_purge(
-        dataset_short, purge_bars=settings.horizon_bars
+    print("[3/5] Aislando Test Final Sellado con TemporalDatasetPartitioner (purging + embargo)...")
+    bar_delta = timeframe_to_timedelta(settings.timeframe)
+    partitioner = TemporalDatasetPartitioner(
+        df=df_btc,
+        purge_bars=settings.horizon_bars,
+        embargo_bars=settings.horizon_bars,
+        sealed_test_ratio=0.15,
+        bar_delta=bar_delta,
+        horizon_bars=settings.horizon_bars,
     )
-    best_brain_short = BenterQuantBrain(
-        feature_cols=best_brain_long.feature_cols,
+
+    cost_model = CostModel(
+        taker_fee_rate=settings.roundtrip_fee / 2.0,
+        half_spread_bps=settings.half_spread_bps,
+        slippage_bps=settings.slippage_bps,
+        horizon_hours=(settings.horizon_bars * bar_delta.total_seconds()) / 3600.0,
+    )
+    tracker = ExperimentTracker(experiments_dir=settings.experiments_dir)
+    dataset_version = loader.compute_dataframe_sha256(df_btc)[:12]
+
+    print("[4/5] Ejecutando Ablation Study M0–M4 en Walk-Forward Validation (LONG y SHORT)...")
+    ablation_long = run_ablation_study(
+        df_ohlcv=df_btc,
+        features=features,
+        outcomes=outcomes_long,
+        partitioner=partitioner,
+        direction="LONG",
+        model_name=model_name,
+        calibration_method=calibration_method,
+        cost_model=cost_model,
+        ev_min_threshold=settings.ev_min_threshold,
+        n_splits=n_splits,
+        random_state=settings.random_seed,
+        tracker=tracker,
+        dataset_version=dataset_version,
         tp_mult=settings.tp_multiple,
         sl_mult=settings.sl_multiple,
-        roundtrip_fee=settings.roundtrip_fee,
-        direction="SHORT"
+        horizon_bars=settings.horizon_bars,
+        df_funding=df_funding,
     )
-    best_brain_short.fit_and_calibrate(df_tr_s, y_tr_s, df_ca_s, y_ca_s, purge_bars=settings.horizon_bars)
-    short_metrics = best_brain_short.evaluate_model(df_te_s, y_te_s, ev_min_threshold=0.10, non_overlapping=True)
-    print(f"Modelo Gemelo SHORT ({best_model_name}) Out-of-Sample -> {short_metrics}\n")
+
+    ablation_short = run_ablation_study(
+        df_ohlcv=df_btc,
+        features=features,
+        outcomes=outcomes_short,
+        partitioner=partitioner,
+        direction="SHORT",
+        model_name=model_name,
+        calibration_method=calibration_method,
+        cost_model=cost_model,
+        ev_min_threshold=settings.ev_min_threshold,
+        n_splits=n_splits,
+        random_state=settings.random_seed,
+        tracker=tracker,
+        dataset_version=dataset_version,
+        tp_mult=settings.tp_multiple,
+        sl_mult=settings.sl_multiple,
+        horizon_bars=settings.horizon_bars,
+        df_funding=df_funding,
+    )
+
+    # Garantía de integridad: 0 accesos al Test Final Sellado
+    assert len(partitioner.sealed_test_access_log) == 0, (
+        "Violación crítica: el Test Final Sellado fue accedido durante la ablación."
+    )
+
+    print("\n================ ABLATION WALK-FORWARD VALIDATION (LONG) ================")
+    print(ablation_long["comparison_table"].to_string(index=False))
+    print(f"Mejor configuración LONG (WF Validation): {ablation_long['best_model_name']}")
+
+    print("\n================ ABLATION WALK-FORWARD VALIDATION (SHORT) ===============")
+    print(ablation_short["comparison_table"].to_string(index=False))
+    print(f"Mejor configuración SHORT (WF Validation): {ablation_short['best_model_name']}")
+    print("=========================================================================\n")
+
+    # Selección de columnas para el adaptador BenterQuantBrain (fallback a M1 si ganó M0)
+    long_cols = (
+        ablation_long["best_feature_cols"]
+        if ablation_long["best_feature_cols"]
+        else ablation_long["configs"]["M1_Technical"]["feature_cols"]
+    )
+    short_cols = (
+        ablation_short["best_feature_cols"]
+        if ablation_short["best_feature_cols"]
+        else ablation_short["configs"]["M1_Technical"]["feature_cols"]
+    )
+
+    best_brain_long = _fit_export_brain(
+        features=features,
+        outcomes=outcomes_long,
+        partitioner=partitioner,
+        feature_cols=long_cols,
+        direction="LONG",
+        calibration_method=calibration_method,
+    )
+    best_brain_short = _fit_export_brain(
+        features=features,
+        outcomes=outcomes_short,
+        partitioner=partitioner,
+        feature_cols=short_cols,
+        direction="SHORT",
+        calibration_method=calibration_method,
+    )
 
     os.makedirs(os.path.dirname(settings.model_artifact_path) or "models", exist_ok=True)
-    joblib.dump(
-        {
-            "brain": best_brain_long,
-            "brain_long": best_brain_long,
-            "brain_short": best_brain_short,
-            "best_model_name": best_model_name,
-            "ablation_results_long": results,
-            "ablation_results_short": short_metrics,
-            "pipeline": pipe,
-        },
-        settings.model_artifact_path
-    )
+    artifact = {
+        "brain": best_brain_long,
+        "brain_long": best_brain_long,
+        "brain_short": best_brain_short,
+        "best_model_name": ablation_long["best_model_name"],
+        "best_model_name_long": ablation_long["best_model_name"],
+        "best_model_name_short": ablation_short["best_model_name"],
+        "ablation_results_long": ablation_long["comparison_table"].to_dict(orient="records"),
+        "ablation_results_short": ablation_short["comparison_table"].to_dict(orient="records"),
+        "experiment_ids_long": ablation_long["experiment_ids"],
+        "experiment_ids_short": ablation_short["experiment_ids"],
+        "sealed_test_touched": False,
+        "pipeline": pipe,
+    }
+    joblib.dump(artifact, settings.model_artifact_path)
     print(
-        f"[4/4] Artefacto de producción guardado exitosamente en "
-        f"{settings.model_artifact_path} ({best_model_name} LONG + SHORT)"
+        f"[5/5] Artefacto exportado en {settings.model_artifact_path} "
+        f"(LONG={ablation_long['best_model_name']}, SHORT={ablation_short['best_model_name']}, "
+        f"Test Final Sellado INTACTO)."
     )
+    return artifact
 
 
 if __name__ == "__main__":

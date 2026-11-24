@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 from config import settings
+from data_quality import timeframe_to_timedelta
 
 
 class RealTimeFuturesSimulator:
@@ -24,11 +25,15 @@ class RealTimeFuturesSimulator:
         trade_log_path: str = settings.trade_log_path,
         initial_balance: float = settings.initial_paper_balance,
         fresh_state: bool = False,
+        timeframe: str = settings.timeframe,
     ):
         self.state_path = state_path
         self.trade_log_path = trade_log_path
         self.initial_balance = initial_balance
         self.fresh_state = fresh_state
+        # Validamos el timeframe al inicializar para fallar rápido si no es soportado
+        timeframe_to_timedelta(timeframe)
+        self.timeframe = timeframe
         self.taker_fee_rate = settings.roundtrip_fee / 2.0  # 0.05% por lado (0.0005)
         self.slippage_rate = settings.slippage_bps / 10000.0  # 1.5 bps = 0.00015
         self.state = self._load_or_init_state(fresh_state=fresh_state)
@@ -163,7 +168,7 @@ class RealTimeFuturesSimulator:
         self.state["wallet_balance"] = round(float(self.state["wallet_balance"]) - entry_fee_usdt, 4)
         self.state["total_fees_usdt"] = round(float(self.state["total_fees_usdt"]) + entry_fee_usdt, 4)
 
-        horizon_seconds = horizon_bars * 15 * 60
+        horizon_seconds = int(timeframe_to_timedelta(self.timeframe).total_seconds()) * horizon_bars
         expiry_dt = datetime.fromtimestamp(now_utc.timestamp() + horizon_seconds, tz=timezone.utc)
 
         pos = {
@@ -258,7 +263,7 @@ class RealTimeFuturesSimulator:
                 raw_exit_price = sl_price * (1.0 - self.slippage_rate)
             elif mark_price >= tp_price or high_check >= tp_price:
                 exit_reason = "TAKE_PROFIT"
-                raw_exit_price = tp_price
+                raw_exit_price = tp_price * (1.0 - self.slippage_rate)
             elif now_ts >= float(pos["horizon_expiry_epoch"]):
                 exit_reason = "TIME_BARRIER"
                 raw_exit_price = bid_price * (1.0 - self.slippage_rate)
@@ -268,7 +273,7 @@ class RealTimeFuturesSimulator:
                 raw_exit_price = sl_price * (1.0 + self.slippage_rate)
             elif mark_price <= tp_price or low_check <= tp_price:
                 exit_reason = "TAKE_PROFIT"
-                raw_exit_price = tp_price
+                raw_exit_price = tp_price * (1.0 + self.slippage_rate)
             elif now_ts >= float(pos["horizon_expiry_epoch"]):
                 exit_reason = "TIME_BARRIER"
                 raw_exit_price = ask_price * (1.0 + self.slippage_rate)

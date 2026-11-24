@@ -12,7 +12,7 @@ import pandas as pd
 
 from context_engine import ContextEngine, ExternalEvent, FOMC_DATES
 from contracts import LabelSpec
-from feature_engine import FeatureEngine
+from feature_engine import ALL_FEATURE_FAMILIES, FeatureEngine
 from label_engine import LabelEngine
 
 
@@ -21,9 +21,10 @@ class QuantFeaturePipeline:
     Adaptador compatible que orquesta las capas causales de features, contexto y etiquetado:
     1. Technical Analysis (`ta_*`) via `FeatureEngine`
     2. Smart Money / Microestructura (`sm_*`) via `FeatureEngine`
-    3. Derivatives / Funding (`deriv_*`) via `FeatureEngine`
-    4. Context Engine / Macro / Régimen (`ctx_*`) via `ContextEngine`
-    5. Triple-Barrier ejecutable via `LabelEngine`
+    3. Market Structure algorítmico (`ms_*`) via `FeatureEngine`
+    4. Derivatives / Funding (`deriv_*`) via `FeatureEngine`
+    5. Context Engine / 6 Regímenes / Eventos Macro (`ctx_*`) via `ContextEngine`
+    6. Triple-Barrier ejecutable via `LabelEngine`
     """
 
     def __init__(
@@ -35,13 +36,24 @@ class QuantFeaturePipeline:
         exclude_ambiguous: bool = True,
         enabled_families: Optional[Sequence[str]] = None,
         events: Optional[Sequence[ExternalEvent]] = None,
+        include_market_structure: bool = True,
     ):
         self.tp_mult = tp_mult
         self.sl_mult = sl_mult
         self.horizon_bars = horizon_bars
+        self.include_market_structure = bool(include_market_structure)
         self.fomc_timestamps = pd.to_datetime(FOMC_DATES, utc=True)
 
-        self.feature_engine = FeatureEngine(enabled_families=enabled_families)
+        if enabled_families is None:
+            resolved_families = (
+                ALL_FEATURE_FAMILIES
+                if self.include_market_structure
+                else tuple(f for f in ALL_FEATURE_FAMILIES if f != "market_structure")
+            )
+        else:
+            resolved_families = tuple(enabled_families)
+
+        self.feature_engine = FeatureEngine(enabled_families=resolved_families)
         self.context_engine = ContextEngine(events=events)
         self.label_spec = LabelSpec(
             tp_mult=tp_mult,
@@ -57,11 +69,21 @@ class QuantFeaturePipeline:
         df_btc: pd.DataFrame,
         df_eth: Optional[pd.DataFrame] = None,
         df_funding: Optional[pd.DataFrame] = None,
+        df_derivatives: Optional[pd.DataFrame] = None,
     ) -> pd.DataFrame:
         """Delega la construcción causal de features y contexto a `FeatureEngine` y `ContextEngine`."""
-        feat = self.feature_engine.build_features(df_btc=df_btc, df_funding=df_funding)
+        feat = self.feature_engine.build_features(
+            df_btc=df_btc,
+            df_funding=df_funding,
+            df_derivatives=df_derivatives,
+        )
         atr_pct = feat["atr_pct"] if "atr_pct" in feat.columns else None
-        ctx = self.context_engine.build_context(df_btc=df_btc, df_eth=df_eth, atr_pct=atr_pct)
+        ctx = self.context_engine.build_context(
+            df_btc=df_btc,
+            df_eth=df_eth,
+            atr_pct=atr_pct,
+            df_funding=df_funding,
+        )
         return pd.concat([feat, ctx], axis=1)
 
     def compute_triple_barrier_outcomes(
@@ -86,3 +108,4 @@ class QuantFeaturePipeline:
         """Devuelve la serie `target_tp_before_sl` generada por `LabelEngine`."""
         outcomes = self.compute_triple_barrier_outcomes(df_btc, atr_pct, direction=direction)
         return outcomes["target_tp_before_sl"]
+
